@@ -77,12 +77,15 @@ function sanitizeAndParseJSON(jsonString: string) {
 
 // Main POST request handler
 export async function POST(req: Request) {
+  console.log("API KEY EXISTS:", !!process.env.ANTHROPIC_API_KEY);
   const apiStart = performance.now();
   const measureTime = (label: string) => logTimestamp(label, apiStart);
 
   // Extract data from the request body
   const { messages = [], model, knowledgeBaseId } = await req.json();
   const latestMessage = messages?.[messages.length - 1]?.content || "";
+
+  console.log("LATEST MESSAGE RECEIVED:", latestMessage);
 
   if (!latestMessage) {
     return new Response(
@@ -117,7 +120,7 @@ export async function POST(req: Request) {
     debugMessage("🚀 API route called", {
       messagesReceived: messages?.length || 0,
       latestMessageLength: latestMessage.length,
-      anthropicKeySlice: process.env.ANTHROPIC_API_KEY?.slice(0, 4) + "****",
+      anthropicKeyPresent: !!process.env.ANTHROPIC_API_KEY,
     }),
   ).slice(0, MAX_DEBUG_LENGTH);
 
