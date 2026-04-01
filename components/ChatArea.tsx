@@ -227,7 +227,7 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
   setSelectedKnowledgeBase,
   knowledgeBases,
 }) => (
-  <div className="p-0 flex flex-col sm:flex-row items-start sm:items-center justify-between pb-2 animate-fade-in">
+  <div className="flex flex-col gap-2 p-0 pb-2 animate-fade-in">
     <div className="flex items-center space-x-4 mb-2 sm:mb-0">
       {showAvatar && (
         <>
@@ -247,15 +247,17 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
         </>
       )}
     </div>
-    <div className="flex space-x-2 w-full sm:w-auto">
+    <div className="flex w-full gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            className="flex-grow text-muted-foreground sm:flex-grow-0"
+            className="min-w-0 flex-1 justify-between overflow-hidden text-muted-foreground"
           >
-            {models.find((m) => m.id === selectedModel)?.name}
+            <span className="truncate">
+              {models.find((m) => m.id === selectedModel)?.name}
+            </span>
             <ChevronDown className="ml-2 h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -275,10 +277,11 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
           <Button
             variant="outline"
             size="sm"
-            className="flex-grow text-muted-foreground  sm:flex-grow-0"
+            className="min-w-0 flex-1 justify-between overflow-hidden text-muted-foreground"
           >
-            {knowledgeBases.find((kb) => kb.id === selectedKnowledgeBase)
-              ?.name || "Select KB"}
+            <span className="truncate">
+              {knowledgeBases.find((kb) => kb.id === selectedKnowledgeBase)?.name || "Select KB"}
+            </span>
             <ChevronDown className="ml-2 h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -311,7 +314,7 @@ function ChatArea() {
   );
 
   const knowledgeBases: KnowledgeBase[] = [
-    { id: "your-knowledge-base-id", name: "Fortellar Knowledge Base" },
+    { id: "your-knowledge-base-id", name: "Knowledge Base" },
     // Add more knowledge bases as needed
   ];
 
@@ -573,8 +576,8 @@ function ChatArea() {
   }, []);
 
   return (
-    <Card className="flex-1 flex flex-col mb-4 mr-4 ml-4">
-      <CardContent className="flex-1 flex flex-col overflow-hidden pt-4 px-4 pb-0">
+    <Card className="m-4 flex h-full min-h-0 flex-col">
+      <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-4 pb-0">
         <ConversationHeader
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
@@ -584,7 +587,7 @@ function ChatArea() {
           setSelectedKnowledgeBase={setSelectedKnowledgeBase}
           knowledgeBases={knowledgeBases}
         />
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full animate-fade-in-up">
               <Avatar className="w-10 h-10 mb-4 border">
@@ -687,7 +690,7 @@ function ChatArea() {
       <CardFooter className="p-4 pt-0">
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col w-full relative bg-background border rounded-xl focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+          className="relative flex w-full flex-col rounded-xl border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 overflow-hidden"
         >
           <Textarea
             value={input}
@@ -698,32 +701,33 @@ function ChatArea() {
             className="resize-none min-h-[44px] bg-background  border-0 p-3 rounded-xl shadow-none focus-visible:ring-0"
             rows={1}
           />
-          <div className="flex justify-between items-center p-3">
-            <div>
-              <Image
-                src="/claude-icon.svg"
-                alt="Claude Icon"
-                width={0}
-                height={14}
-                className="w-auto h-[14px] mt-1"
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={isLoading || input.trim() === ""}
-              className="gap-2"
-              size="sm"
-            >
-              {isLoading ? (
-                <div className="animate-spin h-5 w-5 border-t-2 border-white rounded-full" />
-              ) : (
-                <>
-                  Send Message
-                  <Send className="h-4 w-4" />
-                </>
-              )}
-            </Button>
+          <div className="flex items-center justify-between gap-3 p-3">
+          <div className="min-w-0 flex-1">
+            <Image
+              src="/claude-icon.svg"
+              alt="Claude Icon"
+              width={0}
+              height={14}
+              className="h-[14px] w-auto mt-1 opacity-80"
+            />
           </div>
+        
+          <Button
+            type="submit"
+            disabled={isLoading || input.trim() === ""}
+            className="shrink-0 gap-1 px-3"
+            size="sm"
+          >
+            {isLoading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-t-2 border-white" />
+            ) : (
+              <>
+                Send
+                <Send className="h-4 w-4" />
+              </>
+            )}
+          </Button>
+        </div>
         </form>
       </CardFooter>
     </Card>

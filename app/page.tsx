@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import ChatArea from "@/components/ChatArea";
+import * as Dialog from "@radix-ui/react-dialog";
 
 export default function Home() {
   const services = [
@@ -27,10 +28,10 @@ export default function Home() {
   ];
 
   const quickTopics = [
-    "CloudOps services and capabilities",
-    "Security and compliance support",
-    "Disaster recovery and incident management",
-    "AI readiness and governance",
+    "After-hours troubleshooting and support guidance",
+    "Password, access, and login issue assistance",
+    "Knowledge-based answers for common support questions",
+    "Automatic Jira ticket creation when issues remain unresolved",
   ];
 
   return (
@@ -48,7 +49,7 @@ export default function Home() {
             />
           </div>
 
-          <nav className="hidden gap-8 text-sm font-medium text-slate-700 md:flex">
+          <nav className="hidden items-center gap-8 text-sm font-medium text-slate-700 md:flex">
             <Link href="#services" className="transition hover:text-sky-600">
               Services
             </Link>
@@ -58,6 +59,29 @@ export default function Home() {
             <Link href="#contact" className="transition hover:text-sky-600">
               Contact
             </Link>
+
+            <Dialog.Root>
+              <Dialog.Trigger asChild>
+                <button className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-purple-700">
+                  Ask AI
+                </button>
+              </Dialog.Trigger>
+
+              <Dialog.Portal>
+                <Dialog.Content className="fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col rounded-l-2xl bg-white p-3 shadow-xl">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-slate-900">Ask AI</h2>
+                    <Dialog.Close className="text-slate-500 hover:text-slate-900">
+                      ✕
+                    </Dialog.Close>
+                  </div>
+              
+                  <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+                    <ChatArea />
+                  </div>
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
           </nav>
         </div>
       </header>
@@ -76,23 +100,22 @@ export default function Home() {
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
               This support experience helps users learn more about Fortellar
-              services, ask questions, and quickly find guidance across
-              CloudOps, Security & Compliance, Disaster Recovery, and AI
-              Readiness.
+              services, get after-hours troubleshooting help, and quickly create
+              support tickets when issues remain unresolved.
             </p>
 
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
-                href="#support"
+                href="#services"
                 className="rounded-xl bg-sky-500 px-6 py-3 text-sm font-semibold text-white shadow transition hover:bg-sky-400"
               >
-                Open Support
+                Explore Services
               </Link>
               <Link
-                href="#services"
+                href="#contact"
                 className="rounded-xl border border-slate-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-900"
               >
-                Explore Services
+                Contact Us
               </Link>
             </div>
           </div>
@@ -162,19 +185,19 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-slate-50">
+      <section id="support" className="bg-slate-50">
         <div className="mx-auto grid max-w-7xl gap-12 px-6 py-20 lg:grid-cols-2 lg:px-8">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
               Support Portal
             </p>
             <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
-              A branded customer support experience built for Fortellar
+              An after-hours support experience built for Fortellar
             </h2>
             <p className="mt-4 text-lg text-slate-600">
-              This page combines a website-style experience with an intelligent
-              support interface, giving users a simple way to explore services
-              and ask questions in one place.
+              The AI assistant helps users troubleshoot common issues, answer
+              support questions, and create Jira tickets when problems cannot be
+              resolved through guided steps.
             </p>
           </div>
 
@@ -187,38 +210,6 @@ export default function Home() {
                 <p className="font-medium text-slate-900">{item}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="support" className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
-        <div className="max-w-2xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-            Support Assistant
-          </p>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
-            Ask Fortellar questions in one place
-          </h2>
-          <p className="mt-4 text-lg text-slate-600">
-            Use the support assistant to answer common questions, guide users to
-            relevant services, and create a smoother client experience.
-          </p>
-        </div>
-
-        <div className="mt-10 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between border-b border-slate-200 px-3 pb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">
-                Fortellar Support Assistant
-              </h3>
-              <p className="text-sm text-slate-500">
-                Ask about services, support, and solutions
-              </p>
-            </div>
-          </div>
-
-          <div className="h-[500px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-lg md:h-[650px]">
-            <ChatArea />
           </div>
         </div>
       </section>
@@ -244,7 +235,7 @@ export default function Home() {
                   href="#support"
                   className="inline-flex rounded-xl bg-sky-500 px-6 py-3 text-sm font-semibold text-white shadow transition hover:bg-sky-400"
                 >
-                  Start a Conversation
+                  Learn About Support
                 </Link>
               </div>
             </div>
