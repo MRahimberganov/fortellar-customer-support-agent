@@ -240,6 +240,273 @@ async function createJiraTicket(ticketDraft: {
   }
 }
 
+function buildMockResponse(latestMessage: string, afterHours: boolean) {
+  const normalized = latestMessage.toLowerCase();
+
+  if (
+    normalized.includes("password") ||
+    normalized.includes("login") ||
+    normalized.includes("log in") ||
+    normalized.includes("sign in") ||
+    normalized.includes("access")
+  ) {
+    return {
+      id: crypto.randomUUID(),
+      response: `I can help with that.
+
+1. Please confirm which application or system you are trying to access.
+2. Make sure Caps Lock is off and re-enter your username and password manually.
+3. If a password reset option is available, try resetting your password and then sign in again.
+4. If you already tried that and still cannot log in, reply with **"still not working"** and I’ll prepare a support ticket for follow-up.
+
+Please let me know whether the reset/login steps worked.`,
+      thinking: "Mock response for password or access troubleshooting.",
+      user_mood: "frustrated" as const,
+      suggested_questions: [
+        "I reset it and it still does not work",
+        "This is for VPN access",
+        "I am locked out of my account",
+      ],
+      debug: {
+        context_used: false,
+        after_hours: afterHours,
+      },
+      matched_categories: ["access-management"],
+      redirect_to_agent: {
+        should_redirect: false,
+        reason: "",
+      },
+      support_workflow: {
+        intent: "troubleshooting" as const,
+        issue_type: "password_reset",
+        after_hours: afterHours,
+        business_hours: !afterHours,
+        needs_follow_up: true,
+        follow_up_questions: [
+          "Which application or system are you trying to access?",
+          "Did you already try resetting the password?",
+        ],
+        troubleshooting_steps: [
+          "Confirm the affected application or system.",
+          "Check for simple credential entry issues such as Caps Lock.",
+          "Attempt a password reset if available.",
+          "Try signing in again after the reset.",
+        ],
+        attempted_resolution: false,
+        resolution_status: "needs_more_info" as const,
+        should_create_ticket: false,
+        escalation_reason: "",
+        ticket_draft: {
+          summary: "User unable to access system after password/login issue",
+          description:
+            "User reported a password or login issue. Guided troubleshooting was provided, including credential verification and password reset steps. Awaiting confirmation on whether access was restored.",
+          priority: "Medium",
+          issue_type: "Support",
+          labels: ["after-hours", "support-agent", "access"],
+        },
+      },
+      jira_ticket: {
+        attempted: false,
+        created: false,
+        key: "",
+        url: "",
+        error: "",
+      },
+    };
+  }
+
+  if (
+    normalized.includes("still not working") ||
+    normalized.includes("didn't work") ||
+    normalized.includes("did not work") ||
+    normalized.includes("not fixed") ||
+    normalized.includes("unresolved")
+  ) {
+    return {
+      id: crypto.randomUUID(),
+      response: `Thanks for confirming. Since the troubleshooting steps did not resolve the issue, I would create a Jira ticket for follow-up.
+
+**Mock ticket created:** SUP-123
+
+Summary: User still unable to access system after password reset troubleshooting.
+
+A support engineer would review the issue and follow up based on the contact details and affected system.`,
+      thinking: "Mock unresolved issue flow with ticket outcome.",
+      user_mood: "frustrated" as const,
+      suggested_questions: [
+        "This is affecting VPN",
+        "The affected system is email",
+        "What details will go in the ticket?",
+      ],
+      debug: {
+        context_used: false,
+        after_hours: afterHours,
+      },
+      matched_categories: ["access-management", "incident-support"],
+      redirect_to_agent: {
+        should_redirect: false,
+        reason: "",
+      },
+      support_workflow: {
+        intent: "ticket_request" as const,
+        issue_type: "password_reset",
+        after_hours: afterHours,
+        business_hours: !afterHours,
+        needs_follow_up: false,
+        follow_up_questions: [],
+        troubleshooting_steps: [
+          "Confirmed user attempted the recommended reset/login steps.",
+          "Issue remains unresolved.",
+        ],
+        attempted_resolution: true,
+        resolution_status: "unresolved" as const,
+        should_create_ticket: true,
+        escalation_reason:
+          "User confirmed issue remains unresolved after guided troubleshooting.",
+        ticket_draft: {
+          summary: "User unable to access system after reset attempt",
+          description:
+            "User reported a password/login issue. Guided troubleshooting was provided, including reset and retry steps. User confirmed the issue remains unresolved. Follow-up required.",
+          priority: "High",
+          issue_type: "Support",
+          labels: ["after-hours", "support-agent", "access", "unresolved"],
+        },
+      },
+      jira_ticket: {
+        attempted: true,
+        created: true,
+        key: "SUP-123",
+        url: "",
+        error: "",
+      },
+    };
+  }
+
+  if (normalized.includes("vpn")) {
+    return {
+      id: crypto.randomUUID(),
+      response: `I can help troubleshoot VPN access.
+
+1. Confirm whether you are receiving an invalid credentials error or a connection error.
+2. If it is a credentials error, try resetting your password first.
+3. If it is a connection error, disconnect and reconnect to the VPN client.
+4. If the issue continues after both checks, reply with **"still not working"** and I’ll move toward a support ticket.
+
+What error are you seeing right now?`,
+      thinking: "Mock VPN troubleshooting response.",
+      user_mood: "neutral" as const,
+      suggested_questions: [
+        "It says invalid credentials",
+        "It says connection failed",
+        "Still not working",
+      ],
+      debug: {
+        context_used: false,
+        after_hours: afterHours,
+      },
+      matched_categories: ["remote-access"],
+      redirect_to_agent: {
+        should_redirect: false,
+        reason: "",
+      },
+      support_workflow: {
+        intent: "troubleshooting" as const,
+        issue_type: "vpn_access",
+        after_hours: afterHours,
+        business_hours: !afterHours,
+        needs_follow_up: true,
+        follow_up_questions: [
+          "Are you seeing a credentials error or connection error?",
+        ],
+        troubleshooting_steps: [
+          "Identify whether the error is authentication-related or connectivity-related.",
+          "If authentication-related, try password reset.",
+          "If connectivity-related, reconnect the VPN client.",
+        ],
+        attempted_resolution: false,
+        resolution_status: "needs_more_info" as const,
+        should_create_ticket: false,
+        escalation_reason: "",
+        ticket_draft: {
+          summary: "User unable to access VPN",
+          description:
+            "User reported VPN access issues. Guided troubleshooting was initiated and more information is being collected.",
+          priority: "Medium",
+          issue_type: "Support",
+          labels: ["after-hours", "support-agent", "vpn"],
+        },
+      },
+      jira_ticket: {
+        attempted: false,
+        created: false,
+        key: "",
+        url: "",
+        error: "",
+      },
+    };
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    response: `I can help with after-hours support.
+
+Please describe:
+1. what system or application is affected
+2. what error or issue you are seeing
+3. whether you already tried any troubleshooting steps
+
+If the issue cannot be resolved through guided troubleshooting, I can move toward creating a support ticket.`,
+    thinking: "Generic mock support response.",
+    user_mood: "neutral" as const,
+    suggested_questions: [
+      "My password does not work",
+      "I cannot access VPN",
+      "I still need a ticket created",
+    ],
+    debug: {
+      context_used: false,
+      after_hours: afterHours,
+    },
+    matched_categories: ["general-support"],
+    redirect_to_agent: {
+      should_redirect: false,
+      reason: "",
+    },
+    support_workflow: {
+      intent: "issue" as const,
+      issue_type: "general_support",
+      after_hours: afterHours,
+      business_hours: !afterHours,
+      needs_follow_up: true,
+      follow_up_questions: [
+        "Which system or application is affected?",
+        "What exactly is failing?",
+        "What have you already tried?",
+      ],
+      troubleshooting_steps: [],
+      attempted_resolution: false,
+      resolution_status: "needs_more_info" as const,
+      should_create_ticket: false,
+      escalation_reason: "",
+      ticket_draft: {
+        summary: "General after-hours support issue",
+        description:
+          "User reported a general support issue. Additional details are needed before troubleshooting or ticket creation.",
+        priority: "Medium",
+        issue_type: "Support",
+        labels: ["after-hours", "support-agent"],
+      },
+    },
+    jira_ticket: {
+      attempted: false,
+      created: false,
+      key: "",
+      url: "",
+      error: "",
+    },
+  };
+}
+
 export async function POST(req: Request) {
   console.log("API KEY EXISTS:", !!process.env.ANTHROPIC_API_KEY);
   const apiStart = performance.now();
@@ -299,6 +566,18 @@ export async function POST(req: Request) {
   measureTime("User Input Received");
 
   const { afterHours, businessHours, hour } = getEasternHourAndWindow();
+
+  const mockMode = process.env.MOCK_SUPPORT_AGENT === "true";
+
+  if (mockMode) {
+    return new Response(
+      JSON.stringify(buildMockResponse(latestMessage, afterHours)),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
 
   const MAX_DEBUG_LENGTH = 1000;
   const debugData = sanitizeHeaderValue(
