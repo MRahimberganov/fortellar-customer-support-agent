@@ -63,14 +63,14 @@ export default function Home() {
             <Dialog.Root>
               <Dialog.Trigger asChild>
                 <button className="rounded-xl bg-purple-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-purple-700">
-                  Ask AI
+                  Ask Manny
                 </button>
               </Dialog.Trigger>
 
               <Dialog.Portal>
                 <Dialog.Content className="fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col rounded-l-2xl bg-white p-3 shadow-xl">
                   <div className="mb-3 flex items-center justify-between">
-                    <h2 className="text-lg font-bold text-slate-900">Ask AI</h2>
+                    <h2 className="text-lg font-bold text-slate-900">Ask Manny</h2>
                     <Dialog.Close className="text-slate-500 hover:text-slate-900">
                       ✕
                     </Dialog.Close>

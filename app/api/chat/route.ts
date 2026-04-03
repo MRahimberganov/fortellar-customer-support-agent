@@ -1,12 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { retrieveContext, RAGSource } from "@/app/lib/rag";
 import crypto from "crypto";
 import customerSupportCategories from "@/app/lib/customer_support_categories.json";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 const responseSchema = z.object({
   response: z.string(),
@@ -63,6 +58,24 @@ const responseSchema = z.object({
       priority: z.string().default("Medium"),
       issue_type: z.string().default("Support"),
       labels: z.array(z.string()).default([]),
+      contact: z.object({
+        name: z.string().default(""),
+        email: z.string().default(""),
+        phone: z.string().default(""),
+      }),
+      error_condition: z.string().default(""),
+      error_description: z.string().default(""),
+      metadata: z.object({
+        affected_system: z.string().default(""),
+        environment: z.string().default(""),
+        timestamp: z.string().default(""),
+        after_hours: z.boolean(),
+      }),
+      screenshot_attachment: z.object({
+        file_name: z.string().default(""),
+        file_type: z.string().default(""),
+        attached: z.boolean().default(false)
+      }),
     }),
   }),
   jira_ticket: z
@@ -297,14 +310,31 @@ Please let me know whether the reset/login steps worked.`,
         should_create_ticket: false,
         escalation_reason: "",
         ticket_draft: {
-          summary: "User unable to access system after password/login issue",
+          summary: "User unable to access VPN",
           description:
-            "User reported a password or login issue. Guided troubleshooting was provided, including credential verification and password reset steps. Awaiting confirmation on whether access was restored.",
+            "User reported VPN access issues. Guided troubleshooting was initiated and more information is being collected.",
           priority: "Medium",
           issue_type: "Support",
-          labels: ["after-hours", "support-agent", "access"],
+          labels: ["after-hours", "support-agent", "vpn"],
+          contact: {
+            name: "",
+            email: "",
+            phone: "",
+          },
+          error_condition: "vpn access failure",
+          error_description: "User reports they cannot connect to VPN.",
+          metadata: {
+            affected_system: "VPN",
+            environment: "",
+            timestamp: new Date().toISOString(),
+            after_hours: afterHours,
+          },
+          screenshot_attachment: {
+            file_name: "",
+            file_type: "",
+            attached: false,
+          },
         },
-      },
       jira_ticket: {
         attempted: false,
         created: false,
@@ -370,8 +400,25 @@ A support engineer would review the issue and follow up based on the contact det
           priority: "High",
           issue_type: "Support",
           labels: ["after-hours", "support-agent", "access", "unresolved"],
+          contact: {
+            name: "",
+            email: "",
+            phone: "",
+          },
+          error_condition: "login failure after reset attempt",
+          error_description: "User still cannot access the system after trying the recommended reset/login steps.",
+          metadata: {
+            affected_system: "",
+            environment: "",
+            timestamp: new Date().toISOString(),
+            after_hours: afterHours,
+          },
+          screenshot_attachment: {
+            file_name: "",
+            file_type: "",
+            attached: false,
+          },
         },
-      },
       jira_ticket: {
         attempted: true,
         created: true,
@@ -427,14 +474,31 @@ What error are you seeing right now?`,
         resolution_status: "needs_more_info" as const,
         should_create_ticket: false,
         escalation_reason: "",
-        ticket_draft: {
-          summary: "User unable to access VPN",
-          description:
-            "User reported VPN access issues. Guided troubleshooting was initiated and more information is being collected.",
-          priority: "Medium",
-          issue_type: "Support",
-          labels: ["after-hours", "support-agent", "vpn"],
-        },
+        "ticket_draft": {
+          "summary": "short Jira summary",
+          "description": "detailed Jira description including issue details and attempted troubleshooting",
+          "priority": "Low|Medium|High|Critical",
+          "issue_type": "Support",
+          "labels": ["after-hours", "support-agent"],
+          "contact": {
+            "name": "caller name if known",
+            "email": "caller email if known",
+            "phone": "caller phone if known"
+          },
+          "error_condition": "short condition like invalid credentials, timeout, access denied",
+          "error_description": "plain language description of the error",
+          "metadata": {
+            "affected_system": "system or application name",
+            "environment": "prod|uat|stage|dev or other value if known",
+            "timestamp": "ISO timestamp if known",
+            "after_hours": true
+          },
+          "screenshot_attachment": {
+            "file_name": "screenshot filename if provided",
+            "file_type": "image/png or image/jpeg if provided",
+            "attached": false
+          }
+        }
       },
       jira_ticket: {
         attempted: false,
@@ -495,8 +559,25 @@ If the issue cannot be resolved through guided troubleshooting, I can move towar
         priority: "Medium",
         issue_type: "Support",
         labels: ["after-hours", "support-agent"],
+        contact: {
+          name: "",
+          email: "",
+          phone: "",
+        },
+        error_condition: "",
+        error_description: "",
+        metadata: {
+          affected_system: "",
+          environment: "",
+          timestamp: new Date().toISOString(),
+          after_hours: afterHours,
+        },
+        screenshot_attachment: {
+          file_name: "",
+          file_type: "",
+          attached: false,
+        },
       },
-    },
     jira_ticket: {
       attempted: false,
       created: false,
@@ -504,11 +585,11 @@ If the issue cannot be resolved through guided troubleshooting, I can move towar
       url: "",
       error: "",
     },
-  };
+  },
 }
 
 export async function POST(req: Request) {
-  console.log("API KEY EXISTS:", !!process.env.ANTHROPIC_API_KEY);
+  console.log("API KEY EXISTS:", !!process.env.OPENAI_API_KEY);
   const apiStart = performance.now();
   const measureTime = (label: string) => logTimestamp(label, apiStart);
 
@@ -552,6 +633,24 @@ export async function POST(req: Request) {
             priority: "Medium",
             issue_type: "Support",
             labels: [],
+            contact: {
+              name: "",
+              email: "",
+              phone: "",
+            },
+            error_condition: "",
+            error_description: "",
+            metadata: {
+              affected_system: "",
+              environment: "",
+              timestamp: "",
+              after_hours: false,
+            },
+            screenshot_attachment: {
+              file_name: "",
+              file_type: "",
+              attached: false,
+            },
           },
         },
       }),
@@ -584,7 +683,7 @@ export async function POST(req: Request) {
     debugMessage("🚀 API route called", {
       messagesReceived: messages?.length || 0,
       latestMessageLength: latestMessage.length,
-      anthropicKeyPresent: !!process.env.ANTHROPIC_API_KEY,
+      openaiKeyPresent: !!process.env.OPENAI_API_KEY,
       easternHour: hour,
       afterHours,
     }),
@@ -655,6 +754,19 @@ Important operating rules:
 - If details are missing, ask concise follow-up questions.
 - When a ticket is needed, prepare a concise Jira-ready summary and description.
 - Include any troubleshooting already attempted in the ticket description.
+- If the issue is unresolved, collect contact information for the caller when available:
+  - name
+  - email
+  - phone number
+- Capture the error condition when available (for example: invalid credentials, timeout, access denied, VPN connection failed).
+- Capture a short but useful error description in plain language.
+- Populate metadata when available, including:
+  - affected system/application
+  - environment
+  - timestamp
+  - after-hours status
+- If a screenshot is mentioned or attached, note that in the ticket draft.
+- If required ticket fields are missing, ask follow-up questions before moving to escalation.
 - Be practical, concise, and support-oriented.
 
 Knowledge usage rules:
@@ -700,7 +812,25 @@ You must ALWAYS return valid JSON in exactly this shape:
       "description": "detailed Jira description including issue details and attempted troubleshooting",
       "priority": "Low|Medium|High|Critical",
       "issue_type": "Support",
-      "labels": ["after-hours", "support-agent"]
+      "labels": ["after-hours", "support-agent"],
+      "contact": {
+        "name": "caller name if known",
+        "email": "caller email if known",
+        "phone": "caller phone if known"
+      },
+      "error_condition": "short condition like invalid credentials, timeout, access denied",
+      "error_description": "plain language description of the error",
+      "metadata": {
+        "affected_system": "system or application name",
+        "environment": "prod|uat|stage|dev or other value if known",
+        "timestamp": "ISO timestamp if known",
+        "after_hours": ${afterHours}
+      },
+      "screenshot_attachment": {
+        "file_name": "screenshot filename if provided",
+        "file_type": "image/png or image/jpeg if provided",
+        "attached": false
+      }
     }
   }
 }
@@ -715,32 +845,50 @@ Response style rules:
 
   try {
     console.log("🚀 Query Processing");
-    measureTime("Claude Generation Start");
+    measureTime("OpenAI Generation Start");
 
-    const anthropicMessages = normalizeMessagesForModel(messages);
+    const modelMessages = normalizeMessagesForModel(messages);
 
-    anthropicMessages.push({
-      role: "assistant",
-      content: "{",
-    });
-
-    const response = await anthropic.messages.create({
-      model: model || "claude-3-5-haiku-latest",
-      max_tokens: 1400,
-      messages: anthropicMessages as any,
-      system: systemPrompt,
-      temperature: 0.2,
-    });
-
-    measureTime("Claude Generation Complete");
-
-    const textContent =
-      "{" +
-      response.content
-        .filter((block): block is Anthropic.TextBlock => block.type === "text")
-        .map((block: Anthropic.TextBlock) => block.text)
-        .join(" ");
-
+    const openAiResponse = await fetch(
+      "https://fortellar.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-01-01-preview",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          max_tokens: 1400,
+          temperature: 0.2,
+          response_format: {
+            type: "json_object",
+          },
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+            },
+            ...modelMessages,
+          ],
+        }),
+      },
+    );
+    
+    measureTime("OpenAI Generation Complete");
+    
+    if (!openAiResponse.ok) {
+      const errorText = await openAiResponse.text();
+      throw new Error(`OpenAI API error: ${errorText}`);
+    }
+    
+    const openAiData = await openAiResponse.json();
+    
+    const textContent = String(openAiData?.choices?.[0]?.message?.content || "")
+      .trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "");
+    
     let parsedResponse;
     try {
       parsedResponse = sanitizeAndParseJSON(textContent);
@@ -748,9 +896,9 @@ Response style rules:
       console.error("Error parsing JSON response:", parseError);
       throw new Error("Invalid JSON response from AI");
     }
-
+    
     const validatedResponse = responseSchema.parse(parsedResponse);
-
+    
     let jiraTicket = {
       attempted: false,
       created: false,
@@ -758,7 +906,7 @@ Response style rules:
       url: "",
       error: "",
     };
-
+    
     if (
       validatedResponse.support_workflow.should_create_ticket &&
       validatedResponse.support_workflow.resolution_status !== "resolved"
@@ -767,58 +915,65 @@ Response style rules:
         validatedResponse.support_workflow.ticket_draft,
       );
     }
-
+    
     const responseWithId = {
       id: crypto.randomUUID(),
       ...validatedResponse,
       jira_ticket: jiraTicket,
     };
-
+    
     const apiResponse = new Response(JSON.stringify(responseWithId), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
       },
     });
-
+    
     if (ragSources.length > 0) {
       apiResponse.headers.set(
         "x-rag-sources",
         sanitizeHeaderValue(JSON.stringify(ragSources)),
       );
     }
-
+    
     apiResponse.headers.set("X-Debug-Data", sanitizeHeaderValue(debugData));
-
+    
     measureTime("API Complete");
-
+    
     return apiResponse;
-  } catch (error: any) {
+    } catch (error: any) {
     console.error("💥 Error in message generation:", error);
-
+    
     const errorMessage =
-      error?.error?.error?.message || error?.message || "Unknown error";
-
+      error?.message || "Unknown error";
+    
     let userMessage =
       "The support assistant is temporarily unavailable right now. Please try again later.";
     let thinkingMessage = "Error occurred during message generation.";
-
+    
     if (
       typeof errorMessage === "string" &&
-      errorMessage.toLowerCase().includes("credit balance is too low")
+      errorMessage.toLowerCase().includes("insufficient_quota")
     ) {
       userMessage =
-        "The support assistant is temporarily unavailable right now due to a service billing issue. Please try again later.";
-      thinkingMessage = "Anthropic API billing or credit issue.";
+        "The support assistant is temporarily unavailable right now due to an API quota issue. Please try again later.";
+      thinkingMessage = "OpenAI API quota issue.";
     } else if (
       typeof errorMessage === "string" &&
-      errorMessage.toLowerCase().includes("invalid x-api-key")
+      errorMessage.toLowerCase().includes("invalid_api_key")
     ) {
       userMessage =
         "The support assistant is temporarily unavailable due to an authentication issue. Please try again later.";
-      thinkingMessage = "Anthropic API key issue.";
+      thinkingMessage = "OpenAI API key issue.";
+    } else if (
+      typeof errorMessage === "string" &&
+      errorMessage.toLowerCase().includes("openai api error")
+    ) {
+      userMessage =
+        "The support assistant is temporarily unavailable due to an OpenAI service issue. Please try again later.";
+      thinkingMessage = "OpenAI API request failed.";
     }
-
+    
     return new Response(
       JSON.stringify({
         response: userMessage,
@@ -853,7 +1008,25 @@ Response style rules:
             priority: "Medium",
             issue_type: "Support",
             labels: [],
-          },
+            contact: {
+              name: "",
+              email: "",
+              phone: "",
+            },
+            error_condition: "",
+            error_description: "",
+            metadata: {
+              affected_system: "",
+              environment: "",
+              timestamp: "",
+              after_hours: false,
+            },
+            screenshot_attachment: {
+              file_name: "",
+              file_type: "",
+              attached: false,
+            },
+          }
         },
         jira_ticket: {
           attempted: false,
