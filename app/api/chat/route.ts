@@ -58,26 +58,45 @@ const responseSchema = z.object({
       priority: z.string().default("Medium"),
       issue_type: z.string().default("Support"),
       labels: z.array(z.string()).default([]),
-      contact: z.object({
-        name: z.string().default(""),
-        email: z.string().default(""),
-        phone: z.string().default(""),
-      }),
+      contact: z
+        .object({
+          name: z.string().default(""),
+          email: z.string().default(""),
+          phone: z.string().default(""),
+        })
+        .default({
+          name: "",
+          email: "",
+          phone: "",
+        }),
       error_condition: z.string().default(""),
       error_description: z.string().default(""),
-      metadata: z.object({
-        affected_system: z.string().default(""),
-        environment: z.string().default(""),
-        timestamp: z.string().default(""),
-        after_hours: z.boolean(),
-      }),
-      screenshot_attachment: z.object({
-        file_name: z.string().default(""),
-        file_type: z.string().default(""),
-        attached: z.boolean().default(false)
+      metadata: z
+        .object({
+          affected_system: z.string().default(""),
+          environment: z.string().default(""),
+          timestamp: z.string().default(""),
+          after_hours: z.boolean().default(false),
+        })
+        .default({
+          affected_system: "",
+          environment: "",
+          timestamp: "",
+          after_hours: false,
+        }),
+      screenshot_attachment: z
+        .object({
+          file_name: z.string().default(""),
+          file_type: z.string().default(""),
+          attached: z.boolean().default(false),
+        })
+        .default({
+          file_name: "",
+          file_type: "",
+          attached: false,
+        }),
       }),
     }),
-  }),
   jira_ticket: z
     .object({
       attempted: z.boolean(),
@@ -607,7 +626,12 @@ export async function POST(req: Request) {
   const apiStart = performance.now();
   const measureTime = (label: string) => logTimestamp(label, apiStart);
 
-  const { messages = [], model, knowledgeBaseId } = await req.json();
+  const {
+    messages = [],
+    model,
+    knowledgeBaseId,
+    screenshot,
+  } = await req.json();
   const latestMessage = messages?.[messages.length - 1]?.content || "";
 
   console.log("LATEST MESSAGE RECEIVED:", latestMessage);
@@ -780,6 +804,10 @@ Important operating rules:
   - timestamp
   - after-hours status
 - If a screenshot is mentioned or attached, note that in the ticket draft.
+- If screenshot metadata is provided in the request, populate:
+  - screenshot_attachment.file_name
+  - screenshot_attachment.file_type
+  - screenshot_attachment.attached = true
 - If required ticket fields are missing, ask follow-up questions before moving to escalation.
 - Be practical, concise, and support-oriented.
 
@@ -791,6 +819,9 @@ Knowledge usage rules:
 
 Knowledge Base:
 ${isRagWorking ? retrievedContext : "No information available."}
+
+Screenshot Attachment:
+${screenshot ? JSON.stringify(screenshot) : "No screenshot attached."}
 
 ${categoriesContext}
 

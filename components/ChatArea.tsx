@@ -200,6 +200,11 @@ interface Message {
   id: string;
   role: string;
   content: string;
+  attachment?: {
+    file_name: string;
+    file_type: string;
+    attached: boolean;
+  };
 }
 
 // Define the props interface for ConversationHeader
@@ -303,6 +308,13 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
 function ChatArea() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [selectedScreenshot, setSelectedScreenshot] = useState<File | null>(null);
+  const handleScreenshotChange = (
+  event: React.ChangeEvent<HTMLInputElement>,
+) => {
+  const file = event.target.files?.[0] || null;
+  setSelectedScreenshot(file);
+};
   const [isLoading, setIsLoading] = useState(false);
   const [showHeader, setShowHeader] = useState(false);
   const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5-20251001");
@@ -419,6 +431,17 @@ function ChatArea() {
       id: crypto.randomUUID(),
       role: "user",
       content: typeof event === "string" ? event : input,
+      attachment: selectedScreenshot
+        ? {
+            file_name: selectedScreenshot.name,
+            file_type: selectedScreenshot.type,
+            attached: true,
+          }
+        : {
+            file_name: "",
+            file_type: "",
+            attached: false,
+          },
     };
 
     const placeholderMessage = {
@@ -440,6 +463,7 @@ function ChatArea() {
       placeholderMessage,
     ]);
     setInput("");
+    setSelectedScreenshot(null);
 
     const placeholderDisplayed = performance.now();
     logDuration("Perceived Latency", placeholderDisplayed - clientStart);
@@ -454,6 +478,17 @@ function ChatArea() {
           messages: [...messages, userMessage],
           model: selectedModel,
           knowledgeBaseId: selectedKnowledgeBase,
+          screenshot: selectedScreenshot
+            ? {
+                file_name: selectedScreenshot.name,
+                file_type: selectedScreenshot.type,
+                attached: true,
+              }
+            : {
+                file_name: "",
+                file_type: "",
+                attached: false,
+              },
         }),
       });
 
@@ -703,13 +738,31 @@ function ChatArea() {
           />
           <div className="flex items-center justify-between gap-3 p-3">
           <div className="min-w-0 flex-1">
-            <Image
-              src="/claude-icon.svg"
-              alt="Claude Icon"
-              width={0}
-              height={14}
-              className="h-[14px] w-auto mt-1 opacity-80"
-            />
+            <div className="flex items-center gap-3">
+              <Image
+                src="/claude-icon.svg"
+                alt="Claude Icon"
+                width={0}
+                height={14}
+                className="h-[14px] w-auto mt-1 opacity-80"
+              />
+        
+              <label className="cursor-pointer rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
+                Attach Screenshot
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleScreenshotChange}
+                />
+              </label>
+            </div>
+        
+            {selectedScreenshot && (
+              <p className="mt-2 truncate text-xs text-muted-foreground">
+                Attached: {selectedScreenshot.name}
+              </p>
+            )}
           </div>
         
           <Button
