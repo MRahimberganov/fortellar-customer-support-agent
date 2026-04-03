@@ -186,14 +186,3 @@ If the app “doesn’t respond,” it’s likely due to API or billing.
 MOCK_SUPPORT_AGENT=true
 
 and everything will work instantly.
-
-
----
-
-If I’m being honest — this README now looks **really strong for demos, reviews, and even interviews**.  
-
-If you want next level, we can also:
-- add screenshots of the UI  
-- or make a “Demo GIF” section  
-
-…but this version is already 🔥
