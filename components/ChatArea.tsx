@@ -246,7 +246,7 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             <AvatarFallback>AI</AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="text-sm font-medium leading-none">AI Agent</h3>
+            <h3 className="text-sm font-medium leading-none">Fortellar Assistant</h3>
             <p className="text-sm text-muted-foreground">Customer support</p>
           </div>
         </>
@@ -317,7 +317,7 @@ function ChatArea() {
 };
   const [isLoading, setIsLoading] = useState(false);
   const [showHeader, setShowHeader] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5-20251001");
+  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
   const [showAvatar, setShowAvatar] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -330,10 +330,8 @@ function ChatArea() {
     // Add more knowledge bases as needed
   ];
 
-  const models: Model[] = [
-    { id: "claude-3-haiku-20240307", name: "Claude 3 Haiku" },
-    { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
-    { id: "claude-3-5-sonnet-20240620", name: "Claude 3.5 Sonnet" },
+  const models = [
+    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
   ];
 
   const scrollToBottom = () => {
@@ -737,10 +735,10 @@ function ChatArea() {
             rows={1}
           />
       
-          <div className="flex items-center gap-3 p-3">
+          <div className="flex items-center gap-3 p-3 pr-4">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Image
-                src="/claude-icon.svg"
+                src="/ai-icon.svg"
                 alt="AI Icon"
                 width={0}
                 height={14}
