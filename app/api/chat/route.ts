@@ -170,13 +170,7 @@ function normalizeMessagesForModel(messages: any[]) {
     }));
 }
 
-async function createJiraTicket(ticketDraft: {
-  summary: string;
-  description: string;
-  priority: string;
-  issue_type: string;
-  labels: string[];
-}) {
+async function createJiraTicket(ticketDraft: any) {
   const baseUrl = process.env.JIRA_BASE_URL;
   const email = process.env.JIRA_EMAIL;
   const apiToken = process.env.JIRA_API_TOKEN;
@@ -208,7 +202,22 @@ async function createJiraTicket(ticketDraft: {
           },
           summary: ticketDraft.summary || "After-hours support issue",
           description:
-            ticketDraft.description || "Issue reported through support agent.",
+            `${ticketDraft.description || "Issue reported through support agent."}
+          
+          Contact Name: ${ticketDraft.contact?.name || "N/A"}
+          Contact Email: ${ticketDraft.contact?.email || "N/A"}
+          Contact Phone: ${ticketDraft.contact?.phone || "N/A"}
+          
+          Error Condition: ${ticketDraft.error_condition || "N/A"}
+          Error Description: ${ticketDraft.error_description || "N/A"}
+          
+          Affected System: ${ticketDraft.metadata?.affected_system || "N/A"}
+          Environment: ${ticketDraft.metadata?.environment || "N/A"}
+          Timestamp: ${ticketDraft.metadata?.timestamp || "N/A"}
+          After Hours: ${ticketDraft.metadata?.after_hours ?? "N/A"}
+          
+          Screenshot Attached: ${ticketDraft.screenshot_attachment?.attached ? "Yes" : "No"}
+          Screenshot File: ${ticketDraft.screenshot_attachment?.file_name || "N/A"}`,
           issuetype: {
             name: ticketDraft.issue_type || "Support",
           },
@@ -310,21 +319,21 @@ Please let me know whether the reset/login steps worked.`,
         should_create_ticket: false,
         escalation_reason: "",
         ticket_draft: {
-          summary: "User unable to access VPN",
+          summary: "User unable to access system after password/login issue",
           description:
-            "User reported VPN access issues. Guided troubleshooting was initiated and more information is being collected.",
+            "User reported a password or login issue. Guided troubleshooting was provided, including credential verification and password reset steps. Awaiting confirmation on whether access was restored.",
           priority: "Medium",
           issue_type: "Support",
-          labels: ["after-hours", "support-agent", "vpn"],
+          labels: ["after-hours", "support-agent", "access"],
           contact: {
             name: "",
             email: "",
             phone: "",
           },
-          error_condition: "vpn access failure",
-          error_description: "User reports they cannot connect to VPN.",
+          error_condition: "login failure",
+          error_description: "User reports password/login is not working.",
           metadata: {
-            affected_system: "VPN",
+            affected_system: "",
             environment: "",
             timestamp: new Date().toISOString(),
             after_hours: afterHours,
@@ -335,6 +344,7 @@ Please let me know whether the reset/login steps worked.`,
             attached: false,
           },
         },
+      },
       jira_ticket: {
         attempted: false,
         created: false,
@@ -406,7 +416,8 @@ A support engineer would review the issue and follow up based on the contact det
             phone: "",
           },
           error_condition: "login failure after reset attempt",
-          error_description: "User still cannot access the system after trying the recommended reset/login steps.",
+          error_description:
+            "User still cannot access the system after trying the recommended reset/login steps.",
           metadata: {
             affected_system: "",
             environment: "",
@@ -419,6 +430,7 @@ A support engineer would review the issue and follow up based on the contact det
             attached: false,
           },
         },
+      },
       jira_ticket: {
         attempted: true,
         created: true,
@@ -474,31 +486,32 @@ What error are you seeing right now?`,
         resolution_status: "needs_more_info" as const,
         should_create_ticket: false,
         escalation_reason: "",
-        "ticket_draft": {
-          "summary": "short Jira summary",
-          "description": "detailed Jira description including issue details and attempted troubleshooting",
-          "priority": "Low|Medium|High|Critical",
-          "issue_type": "Support",
-          "labels": ["after-hours", "support-agent"],
-          "contact": {
-            "name": "caller name if known",
-            "email": "caller email if known",
-            "phone": "caller phone if known"
+        ticket_draft: {
+          summary: "User unable to access VPN",
+          description:
+            "User reported VPN access issues. Guided troubleshooting was initiated and more information is being collected.",
+          priority: "Medium",
+          issue_type: "Support",
+          labels: ["after-hours", "support-agent", "vpn"],
+          contact: {
+            name: "",
+            email: "",
+            phone: "",
           },
-          "error_condition": "short condition like invalid credentials, timeout, access denied",
-          "error_description": "plain language description of the error",
-          "metadata": {
-            "affected_system": "system or application name",
-            "environment": "prod|uat|stage|dev or other value if known",
-            "timestamp": "ISO timestamp if known",
-            "after_hours": true
+          error_condition: "vpn access failure",
+          error_description: "User reports they cannot connect to VPN.",
+          metadata: {
+            affected_system: "VPN",
+            environment: "",
+            timestamp: new Date().toISOString(),
+            after_hours: afterHours,
           },
-          "screenshot_attachment": {
-            "file_name": "screenshot filename if provided",
-            "file_type": "image/png or image/jpeg if provided",
-            "attached": false
-          }
-        }
+          screenshot_attachment: {
+            file_name: "",
+            file_type: "",
+            attached: false,
+          },
+        },
       },
       jira_ticket: {
         attempted: false,
@@ -578,6 +591,7 @@ If the issue cannot be resolved through guided troubleshooting, I can move towar
           attached: false,
         },
       },
+    },
     jira_ticket: {
       attempted: false,
       created: false,
@@ -585,7 +599,7 @@ If the issue cannot be resolved through guided troubleshooting, I can move towar
       url: "",
       error: "",
     },
-  },
+  };
 }
 
 export async function POST(req: Request) {
