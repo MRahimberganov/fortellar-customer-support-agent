@@ -735,32 +735,22 @@ function ChatArea() {
             rows={1}
           />
       
-          <div className="flex items-center gap-3 p-3 pr-4">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Image
-                src="/ai-icon.svg"
-                alt="AI Icon"
-                width={0}
-                height={14}
-                className="h-[14px] w-auto opacity-70"
-              />
-      
-              <label className="cursor-pointer whitespace-nowrap rounded-md border px-3 py-1 text-xs text-muted-foreground hover:bg-muted">
-                📎 Attach
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleScreenshotChange}
-                />
-              </label>
-      
-              {selectedScreenshot && (
-                <span className="truncate text-xs text-muted-foreground">
-                  {selectedScreenshot.name}
-                </span>
-              )}
+          {selectedScreenshot && (
+            <div className="px-3 pb-1 text-xs text-muted-foreground">
+              Attached: {selectedScreenshot.name}
             </div>
+          )}
+      
+          <div className="flex items-center justify-between px-3 pb-3 pt-2">
+            <label className="cursor-pointer rounded-md border px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted">
+              📎 Attach Screenshot
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleScreenshotChange}
+              />
+            </label>
       
             <Button
               type="submit"
