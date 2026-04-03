@@ -725,7 +725,7 @@ function ChatArea() {
       <CardFooter className="p-4 pt-0">
         <form
           onSubmit={handleSubmit}
-          className="relative flex w-full flex-col rounded-xl border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 overflow-hidden"
+          className="relative flex w-full flex-col overflow-hidden rounded-xl border bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
         >
           <Textarea
             value={input}
@@ -733,22 +733,22 @@ function ChatArea() {
             onKeyDown={handleKeyDown}
             placeholder="Type your message here..."
             disabled={isLoading}
-            className="resize-none min-h-[44px] bg-background  border-0 p-3 rounded-xl shadow-none focus-visible:ring-0"
+            className="min-h-[44px] resize-none rounded-xl border-0 bg-background p-3 shadow-none focus-visible:ring-0"
             rows={1}
           />
-          <div className="flex items-center justify-between gap-3 p-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
+      
+          <div className="flex items-center gap-3 p-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <Image
                 src="/claude-icon.svg"
-                alt="Claude Icon"
+                alt="AI Icon"
                 width={0}
                 height={14}
-                className="h-[14px] w-auto mt-1 opacity-80"
+                className="h-[14px] w-auto opacity-70"
               />
-        
-              <label className="cursor-pointer rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
-                Attach Screenshot
+      
+              <label className="cursor-pointer whitespace-nowrap rounded-md border px-3 py-1 text-xs text-muted-foreground hover:bg-muted">
+                📎 Attach
                 <input
                   type="file"
                   accept="image/*"
@@ -756,31 +756,27 @@ function ChatArea() {
                   onChange={handleScreenshotChange}
                 />
               </label>
+      
+              {selectedScreenshot && (
+                <span className="truncate text-xs text-muted-foreground">
+                  {selectedScreenshot.name}
+                </span>
+              )}
             </div>
-        
-            {selectedScreenshot && (
-              <p className="mt-2 truncate text-xs text-muted-foreground">
-                Attached: {selectedScreenshot.name}
-              </p>
-            )}
+      
+            <Button
+              type="submit"
+              disabled={isLoading || input.trim() === ""}
+              className="shrink-0 px-4"
+              size="sm"
+            >
+              {isLoading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-t-2 border-white" />
+              ) : (
+                <>Send</>
+              )}
+            </Button>
           </div>
-        
-          <Button
-            type="submit"
-            disabled={isLoading || input.trim() === ""}
-            className="shrink-0 gap-1 px-3"
-            size="sm"
-          >
-            {isLoading ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-t-2 border-white" />
-            ) : (
-              <>
-                Send
-                <Send className="h-4 w-4" />
-              </>
-            )}
-          </Button>
-        </div>
         </form>
       </CardFooter>
     </Card>
