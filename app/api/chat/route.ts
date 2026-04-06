@@ -189,11 +189,92 @@ function normalizeMessagesForModel(messages: any[]) {
     }));
 }
 
+function mapJiraPriority(ticketDraft: any) {
+  const summary = String(ticketDraft?.summary || "").toLowerCase();
+  const description = String(ticketDraft?.description || "").toLowerCase();
+  const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
+  const errorDescription = String(ticketDraft?.error_description || "").toLowerCase();
+
+  const combinedText = [
+    summary,
+    description,
+    errorCondition,
+    errorDescription,
+  ].join(" ");
+
+  const afterHours = Boolean(ticketDraft?.metadata?.after_hours);
+
+  if (
+    afterHours ||
+    combinedText.includes("urgent") ||
+    combinedText.includes("critical") ||
+    combinedText.includes("production") ||
+    combinedText.includes("cannot log in") ||
+    combinedText.includes("can't log in") ||
+    combinedText.includes("unable to log in") ||
+    combinedText.includes("login failure") ||
+    combinedText.includes("outage") ||
+    combinedText.includes("down")
+  ) {
+    return "High";
+  }
+
+  if (
+    combinedText.includes("slow") ||
+    combinedText.includes("intermittent") ||
+    combinedText.includes("degraded") ||
+    combinedText.includes("warning")
+  ) {
+    return "Medium";
+  }
+
+  return "Low";
+}
+
+function mapJiraAssignee(ticketDraft: any) {
+  const summary = String(ticketDraft?.summary || "").toLowerCase();
+  const description = String(ticketDraft?.description || "").toLowerCase();
+  const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
+  const errorDescription = String(ticketDraft?.error_description || "").toLowerCase();
+
+  const combinedText = [
+    summary,
+    description,
+    errorCondition,
+    errorDescription,
+  ].join(" ");
+
+  const loginAssignee = process.env.JIRA_LOGIN_ASSIGNEE_ACCOUNT_ID;
+
+  if (
+    combinedText.includes("log in") ||
+    combinedText.includes("login") ||
+    combinedText.includes("password") ||
+    combinedText.includes("access") ||
+    combinedText.includes("mfa")
+  ) {
+    if (loginAssignee) {
+      return { accountId: loginAssignee };
+    }
+  }
+
+  return undefined;
+}
+
 async function createJiraTicket(ticketDraft: any) {
+  console.log("ENTERED createJiraTicket");
   const baseUrl = process.env.JIRA_BASE_URL;
   const email = process.env.JIRA_EMAIL;
   const apiToken = process.env.JIRA_API_TOKEN;
   const projectKey = process.env.JIRA_PROJECT_KEY;
+  const issueType = process.env.JIRA_ISSUE_TYPE || "Task";
+    console.log("JIRA CONFIG CHECK:", {
+      baseUrl,
+      email,
+      projectKey,
+      issueType,
+      hasApiToken: !!apiToken,
+    });
 
   if (!baseUrl || !email || !apiToken || !projectKey) {
     return {
@@ -206,7 +287,10 @@ async function createJiraTicket(ticketDraft: any) {
   }
 
   try {
-    const response = await fetch(`${baseUrl}/rest/api/2/issue`, {
+    console.log("SENDING REQUEST TO JIRA:", `${baseUrl}/rest/api/3/issue`);
+    console.log("MAPPED JIRA PRIORITY:", mapJiraPriority(ticketDraft));
+    console.log("MAPPED JIRA ASSIGNEE:", mapJiraAssignee(ticketDraft));
+    const response = await fetch(`${baseUrl}/rest/api/3/issue`, {
       method: "POST",
       headers: {
         Authorization:
@@ -219,9 +303,21 @@ async function createJiraTicket(ticketDraft: any) {
           project: {
             key: projectKey,
           },
+          priority: {
+            name: mapJiraPriority(ticketDraft),
+          },
+          assignee: mapJiraAssignee(ticketDraft),
           summary: ticketDraft.summary || "After-hours support issue",
-          description:
-            `${ticketDraft.description || "Issue reported through support agent."}
+          description: {
+            type: "doc",
+            version: 1,
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: `${ticketDraft.description || "Issue reported through support agent."}
           
           Contact Name: ${ticketDraft.contact?.name || "N/A"}
           Contact Email: ${ticketDraft.contact?.email || "N/A"}
@@ -237,18 +333,23 @@ async function createJiraTicket(ticketDraft: any) {
           
           Screenshot Attached: ${ticketDraft.screenshot_attachment?.attached ? "Yes" : "No"}
           Screenshot File: ${ticketDraft.screenshot_attachment?.file_name || "N/A"}`,
-          issuetype: {
-            name: ticketDraft.issue_type || "Support",
+                  },
+                ],
+              },
+            ],
           },
-          priority: {
-            name: ticketDraft.priority || "Medium",
+          issuetype: {
+            id: process.env.JIRA_ISSUE_TYPE_ID || "10298",
           },
           labels: Array.isArray(ticketDraft.labels) ? ticketDraft.labels : [],
         },
       }),
     });
 
+    console.log("JIRA RESPONSE STATUS:", response.status, response.statusText);
+
     const data = await response.json();
+    console.log("JIRA RESPONSE DATA:", data);
 
     if (!response.ok) {
       return {
@@ -943,7 +1044,8 @@ Response style rules:
     }
     
     const validatedResponse = responseSchema.parse(parsedResponse);
-    
+
+    console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
     let jiraTicket = {
       attempted: false,
       created: false,
@@ -956,9 +1058,11 @@ Response style rules:
       validatedResponse.support_workflow.should_create_ticket &&
       validatedResponse.support_workflow.resolution_status !== "resolved"
     ) {
+      console.log("ABOUT TO CREATE JIRA TICKET");
       jiraTicket = await createJiraTicket(
         validatedResponse.support_workflow.ticket_draft,
       );
+      console.log("JIRA RESULT:", jiraTicket);
     }
     
     const responseWithId = {
