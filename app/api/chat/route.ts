@@ -2,6 +2,8 @@ import { z } from "zod";
 import { retrieveContext, RAGSource } from "@/app/lib/rag";
 import crypto from "crypto";
 import customerSupportCategories from "@/app/lib/customer_support_categories.json";
+import { createExternalTicket } from "@/app/lib/ticketing/createExternalTicket";
+import { determineAssignmentGroup } from "@/app/lib/ticketing/routing";
 
 const responseSchema = z.object({
   response: z.string(),
@@ -38,6 +40,7 @@ const responseSchema = z.object({
       "other",
     ]),
     issue_type: z.string().default("general"),
+    ticketing_system: z.string().default("jira"),
     after_hours: z.boolean(),
     business_hours: z.boolean(),
     needs_follow_up: z.boolean(),
@@ -193,327 +196,29 @@ function normalizeMessagesForModel(messages: any[]) {
     }));
 }
 
-function mapJiraPriority(ticketDraft: any) {
-  const summary = String(ticketDraft?.summary || "").toLowerCase();
-  const description = String(ticketDraft?.description || "").toLowerCase();
-  const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
-  const errorDescription = String(ticketDraft?.error_description || "").toLowerCase();
-
-  const combinedText = [
-    summary,
-    description,
-    errorCondition,
-    errorDescription,
-  ].join(" ");
-
-  const afterHours = Boolean(ticketDraft?.metadata?.after_hours);
+function determineTicketingSystem(ticketDraft: any) {
+  const assignmentGroup = String(ticketDraft?.assignment_group || "").toLowerCase();
+  const category = String(ticketDraft?.category || "").toLowerCase();
 
   if (
-    afterHours ||
-    combinedText.includes("urgent") ||
-    combinedText.includes("critical") ||
-    combinedText.includes("production") ||
-    combinedText.includes("cannot log in") ||
-    combinedText.includes("can't log in") ||
-    combinedText.includes("unable to log in") ||
-    combinedText.includes("login failure") ||
-    combinedText.includes("outage") ||
-    combinedText.includes("down")
+    assignmentGroup.includes("cloudops") ||
+    assignmentGroup.includes("security") ||
+    assignmentGroup.includes("data") ||
+    category.includes("infrastructure") ||
+    category.includes("security") ||
+    category.includes("data")
   ) {
-    return "High";
+    return "jira";
   }
 
   if (
-    combinedText.includes("slow") ||
-    combinedText.includes("intermittent") ||
-    combinedText.includes("degraded") ||
-    combinedText.includes("warning")
+    assignmentGroup.includes("iam") ||
+    category.includes("access")
   ) {
-    return "Medium";
+    return "servicenow";
   }
 
-  return "Low";
-}
-
-function determineAssignmentGroup(ticketDraft: any) {
-  const summary = String(ticketDraft?.summary || "").toLowerCase();
-  const description = String(ticketDraft?.description || "").toLowerCase();
-  const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
-  const errorDescription = String(ticketDraft?.error_description || "").toLowerCase();
-
-  const combinedText = [
-    summary,
-    description,
-    errorCondition,
-    errorDescription,
-  ].join(" ");
-
-  if (
-    combinedText.includes("log in") ||
-    combinedText.includes("login") ||
-    combinedText.includes("sign in") ||
-    combinedText.includes("password") ||
-    combinedText.includes("access denied") ||
-    combinedText.includes("account locked") ||
-    combinedText.includes("mfa")
-  ) {
-    return {
-      assignment_group: "IAM Team",
-      assignment_reason: "Detected login, password, MFA, or access-related issue.",
-      category: "access",
-      subcategory: "login",
-    };
-  }
-
-  if (
-    combinedText.includes("outage") ||
-    combinedText.includes("deployment") ||
-    combinedText.includes("server") ||
-    combinedText.includes("aws") ||
-    combinedText.includes("cloud") ||
-    combinedText.includes("infrastructure") ||
-    combinedText.includes("infra") ||
-    combinedText.includes("dns") ||
-    combinedText.includes("network") ||
-    combinedText.includes("container") ||
-    combinedText.includes("kubernetes") ||
-    combinedText.includes("service down")
-  ) {
-    return {
-      assignment_group: "CloudOps Team",
-      assignment_reason: "Detected infrastructure, cloud platform, deployment, or outage issue.",
-      category: "infrastructure",
-      subcategory: "cloudops",
-    };
-  }
-
-  if (
-    combinedText.includes("security") ||
-    combinedText.includes("phishing") ||
-    combinedText.includes("malware") ||
-    combinedText.includes("breach") ||
-    combinedText.includes("unauthorized") ||
-    combinedText.includes("suspicious") ||
-    combinedText.includes("vpn compromise") ||
-    combinedText.includes("compliance")
-  ) {
-    return {
-      assignment_group: "Security Team",
-      assignment_reason: "Detected security, suspicious activity, or compliance-related issue.",
-      category: "security",
-      subcategory: "incident",
-    };
-  }
-
-  if (
-    combinedText.includes("data") ||
-    combinedText.includes("pipeline") ||
-    combinedText.includes("etl") ||
-    combinedText.includes("dashboard") ||
-    combinedText.includes("report") ||
-    combinedText.includes("warehouse") ||
-    combinedText.includes("job failed") ||
-    combinedText.includes("report failed")
-  ) {
-    return {
-      assignment_group: "Data Team",
-      assignment_reason: "Detected data, reporting, ETL, or pipeline issue.",
-      category: "data",
-      subcategory: "pipeline",
-    };
-  }
-
-  return {
-    assignment_group: "General Support",
-    assignment_reason: "No strong routing keyword detected.",
-    category: "general",
-    subcategory: "general",
-  };
-}
-
-function mapJiraAssignee(ticketDraft: any) {
-  const routing = determineAssignmentGroup(ticketDraft);
-
-  const iamAssignee = process.env.JIRA_IAM_ASSIGNEE_ACCOUNT_ID;
-  const cloudOpsAssignee = process.env.JIRA_CLOUDOPS_ASSIGNEE_ACCOUNT_ID;
-  const securityAssignee = process.env.JIRA_SECURITY_ASSIGNEE_ACCOUNT_ID;
-  const dataAssignee = process.env.JIRA_DATA_ASSIGNEE_ACCOUNT_ID;
-
-  if (routing.assignment_group === "IAM Team" && iamAssignee) {
-    return { accountId: iamAssignee };
-  }
-
-  if (routing.assignment_group === "CloudOps Team" && cloudOpsAssignee) {
-    return { accountId: cloudOpsAssignee };
-  }
-
-  if (routing.assignment_group === "Security Team" && securityAssignee) {
-    return { accountId: securityAssignee };
-  }
-
-  if (routing.assignment_group === "Data Team" && dataAssignee) {
-    return { accountId: dataAssignee };
-  }
-
-  return undefined;
-}
-
-async function createJiraTicket(ticketDraft: any) {
-  console.log("ENTERED createJiraTicket");
-  const baseUrl = process.env.JIRA_BASE_URL;
-  const email = process.env.JIRA_EMAIL;
-  const apiToken = process.env.JIRA_API_TOKEN;
-  const projectKey = process.env.JIRA_PROJECT_KEY;
-  const issueType = process.env.JIRA_ISSUE_TYPE || "Task";
-  const routing = determineAssignmentGroup(ticketDraft);
-
-    ticketDraft.assignment_group =
-      ticketDraft.assignment_group || routing.assignment_group;
-    ticketDraft.assignment_reason =
-      ticketDraft.assignment_reason || routing.assignment_reason;
-    ticketDraft.category = ticketDraft.category || routing.category;
-    ticketDraft.subcategory = ticketDraft.subcategory || routing.subcategory;
-  
-    ticketDraft.labels = Array.from(
-      new Set([
-        ...(Array.isArray(ticketDraft.labels) ? ticketDraft.labels : []),
-        "support-agent",
-        ticketDraft.assignment_group.toLowerCase().replace(/\s+/g, "-"),
-        ticketDraft.category.toLowerCase().replace(/\s+/g, "-"),
-        ticketDraft.subcategory.toLowerCase().replace(/\s+/g, "-"),
-      ]),
-    );
-  
-    console.log("ROUTING DECISION:", {
-      assignment_group: ticketDraft.assignment_group,
-      assignment_reason: ticketDraft.assignment_reason,
-      category: ticketDraft.category,
-      subcategory: ticketDraft.subcategory,
-    });
-    console.log("JIRA CONFIG CHECK:", {
-      baseUrl,
-      email,
-      projectKey,
-      issueType,
-      hasApiToken: !!apiToken,
-    });
-
-  if (!baseUrl || !email || !apiToken || !projectKey) {
-    return {
-      attempted: false,
-      created: false,
-      key: "",
-      url: "",
-      error: "Jira environment variables are not fully configured.",
-    };
-  }
-
-  try {
-    console.log("SENDING REQUEST TO JIRA:", `${baseUrl}/rest/api/3/issue`);
-    console.log("MAPPED JIRA PRIORITY:", mapJiraPriority(ticketDraft));
-    console.log("MAPPED JIRA ASSIGNEE:", mapJiraAssignee(ticketDraft));
-    const response = await fetch(`${baseUrl}/rest/api/3/issue`, {
-      method: "POST",
-      headers: {
-        Authorization:
-          "Basic " + Buffer.from(`${email}:${apiToken}`).toString("base64"),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        fields: {
-          project: {
-            key: projectKey,
-          },
-          priority: {
-            name: mapJiraPriority(ticketDraft),
-          },
-          assignee: mapJiraAssignee(ticketDraft),
-          summary: ticketDraft.summary || "After-hours support issue",
-          description: {
-            type: "doc",
-            version: 1,
-            content: [
-              {
-                type: "paragraph",
-                content: [
-                  {
-                    type: "text",
-                    text: `${ticketDraft.description || "Issue reported through support agent."}
-
-            Routing Details:
-            Assignment Group: ${ticketDraft.assignment_group || "General Support"}
-            Assignment Reason: ${ticketDraft.assignment_reason || "N/A"}
-            Category: ${ticketDraft.category || "general"}
-            Subcategory: ${ticketDraft.subcategory || "general"}
-            
-            Contact Information:
-            Contact Name: ${ticketDraft.contact?.name || "N/A"}
-            Contact Email: ${ticketDraft.contact?.email || "N/A"}
-            Contact Phone: ${ticketDraft.contact?.phone || "N/A"}
-            
-            Issue Details:
-            Error Condition: ${ticketDraft.error_condition || "N/A"}
-            Error Description: ${ticketDraft.error_description || "N/A"}
-            
-            Metadata:
-            Affected System: ${ticketDraft.metadata?.affected_system || "N/A"}
-            Environment: ${ticketDraft.metadata?.environment || "N/A"}
-            Timestamp: ${ticketDraft.metadata?.timestamp || "N/A"}
-            After Hours: ${ticketDraft.metadata?.after_hours ?? "N/A"}
-            
-            Attachments:
-            Screenshot Attached: ${ticketDraft.screenshot_attachment?.attached ? "Yes" : "No"}
-            Screenshot File: ${ticketDraft.screenshot_attachment?.file_name || "N/A"}`,
-                  },
-                ],
-              },
-            ],
-          },
-          issuetype: {
-            id: process.env.JIRA_ISSUE_TYPE_ID || "10298",
-          },
-          labels: Array.from(
-            new Set(Array.isArray(ticketDraft.labels) ? ticketDraft.labels : []),
-          ),
-        },
-      }),
-    });
-
-    console.log("JIRA RESPONSE STATUS:", response.status, response.statusText);
-
-    const data = await response.json();
-    console.log("JIRA RESPONSE DATA:", data);
-
-    if (!response.ok) {
-      return {
-        attempted: true,
-        created: false,
-        key: "",
-        url: "",
-        error:
-          data?.errors
-            ? JSON.stringify(data.errors)
-            : data?.errorMessages?.join(", ") || "Unknown Jira error",
-      };
-    }
-
-    return {
-      attempted: true,
-      created: true,
-      key: data?.key || "",
-      url: data?.key ? `${baseUrl}/browse/${data.key}` : "",
-      error: "",
-    };
-  } catch (error: any) {
-    return {
-      attempted: true,
-      created: false,
-      key: "",
-      url: "",
-      error: error?.message || "Failed to create Jira ticket.",
-    };
-  }
+  return "zendesk";
 }
 
 function buildMockResponse(latestMessage: string, afterHours: boolean) {
@@ -555,6 +260,7 @@ Please let me know whether the reset/login steps worked.`,
       support_workflow: {
         intent: "troubleshooting" as const,
         issue_type: "password_reset",
+        ticketing_system: "jira",
         after_hours: afterHours,
         business_hours: !afterHours,
         needs_follow_up: true,
@@ -648,6 +354,7 @@ A support engineer would review the issue and follow up based on the contact det
       support_workflow: {
         intent: "ticket_request" as const,
         issue_type: "password_reset",
+        ticketing_system: "jira",
         after_hours: afterHours,
         business_hours: !afterHours,
         needs_follow_up: false,
@@ -729,6 +436,7 @@ What error are you seeing right now?`,
       support_workflow: {
         intent: "troubleshooting" as const,
         issue_type: "vpn_access",
+        ticketing_system: "jira",
         after_hours: afterHours,
         business_hours: !afterHours,
         needs_follow_up: true,
@@ -810,6 +518,7 @@ If the issue cannot be resolved through guided troubleshooting, I can move towar
     support_workflow: {
       intent: "issue" as const,
       issue_type: "general_support",
+      ticketing_system: "jira",
       after_hours: afterHours,
       business_hours: !afterHours,
       needs_follow_up: true,
@@ -899,6 +608,7 @@ export async function POST(req: Request) {
         support_workflow: {
           intent: "other",
           issue_type: "general",
+          ticketing_system: "jira",
           after_hours: false,
           business_hours: true,
           needs_follow_up: true,
@@ -1099,6 +809,7 @@ You must ALWAYS return valid JSON in exactly this shape:
   "support_workflow": {
     "intent": "question|issue|troubleshooting|ticket_request|other",
     "issue_type": "short issue type like password_reset, login_issue, vpn_access, billing_question",
+    "ticketing_system": "one of: jira, servicenow, zendesk",
     "after_hours": ${afterHours},
     "business_hours": ${businessHours},
     "needs_follow_up": true,
@@ -1139,6 +850,13 @@ You must ALWAYS return valid JSON in exactly this shape:
     }
   }
 }
+
+Choose a ticketing_system for the issue:
+- use "jira" for engineering, cloud, infrastructure, DevOps, security engineering, and data engineering issues
+- use "servicenow" for internal ITSM, employee access, onboarding, MFA, laptop, and internal service desk workflows
+- use "zendesk" for customer support, external user issues, billing questions, and product support cases
+
+Always include support_workflow.ticketing_system.
 
 Response style rules:
 - Keep the response clear and actionable.
@@ -1239,7 +957,7 @@ Response style rules:
     );
 
     console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
-    let jiraTicket = {
+    let externalTicket = {
       attempted: false,
       created: false,
       key: "",
@@ -1247,21 +965,38 @@ Response style rules:
       error: "",
     };
     
+    const aiTicketingSystem = String(
+      validatedResponse.support_workflow.ticketing_system || "",
+    ).toLowerCase();
+    
+    if (!["jira", "servicenow", "zendesk"].includes(aiTicketingSystem)) {
+      validatedResponse.support_workflow.ticketing_system =
+        determineTicketingSystem(validatedResponse.support_workflow.ticket_draft);
+    } else {
+      validatedResponse.support_workflow.ticketing_system = aiTicketingSystem;
+    }
+    
+    console.log(
+      "SELECTED TICKETING SYSTEM:",
+      validatedResponse.support_workflow.ticketing_system,
+    );
+    
     if (
       validatedResponse.support_workflow.should_create_ticket &&
       validatedResponse.support_workflow.resolution_status !== "resolved"
     ) {
-      console.log("ABOUT TO CREATE JIRA TICKET");
-      jiraTicket = await createJiraTicket(
+      console.log("ABOUT TO CREATE EXTERNAL TICKET");
+      externalTicket = await createExternalTicket(
+        validatedResponse.support_workflow.ticketing_system,
         validatedResponse.support_workflow.ticket_draft,
       );
-      console.log("JIRA RESULT:", jiraTicket);
+      console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
     
     const responseWithId = {
       id: crypto.randomUUID(),
       ...validatedResponse,
-      jira_ticket: jiraTicket,
+      jira_ticket: externalTicket,
     };
     
     const apiResponse = new Response(JSON.stringify(responseWithId), {
@@ -1335,6 +1070,7 @@ Response style rules:
         support_workflow: {
           intent: "other",
           issue_type: "general",
+          ticketing_system: "jira",
           after_hours: false,
           business_hours: true,
           needs_follow_up: true,
