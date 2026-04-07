@@ -5,6 +5,7 @@ import customerSupportCategories from "@/app/lib/customer_support_categories.jso
 import { createExternalTicket } from "@/app/lib/ticketing/createExternalTicket";
 import { determineAssignmentGroup } from "@/app/lib/ticketing/routing";
 import { sendTeamsAlert } from "@/app/lib/ticketing/teams";
+import { determineCloudProvider } from "@/app/lib/ticketing/cloudRouting";
 
 const responseSchema = z.object({
   response: z.string(),
@@ -42,6 +43,15 @@ const responseSchema = z.object({
     ]),
     issue_type: z.string().default("general"),
     ticketing_system: z.string().optional(),
+    cloud_provider: z.enum(["aws", "azure", "gcp", "none"]).default("none"),
+    target_system: z.enum(["jira", "servicenow", "zendesk", "none"]).default("none"),
+    action_type: z.enum([
+      "troubleshoot",
+      "create_ticket",
+      "notify",
+      "cloud_request",
+      "none",
+    ]).default("none"),
     after_hours: z.boolean(),
     business_hours: z.boolean(),
     needs_follow_up: z.boolean(),
@@ -80,18 +90,22 @@ const responseSchema = z.object({
       error_condition: z.string().default(""),
       error_description: z.string().default(""),
       metadata: z
-        .object({
-          affected_system: z.string().default(""),
-          environment: z.string().default(""),
-          timestamp: z.string().default(""),
-          after_hours: z.boolean().default(false),
-        })
-        .default({
-          affected_system: "",
-          environment: "",
-          timestamp: "",
-          after_hours: false,
-        }),
+      .object({
+        affected_system: z.string().default(""),
+        environment: z.string().default(""),
+        timestamp: z.string().default(""),
+        after_hours: z.boolean().default(false),
+        cloud_provider: z
+          .enum(["aws", "azure", "gcp", "unknown"])
+          .default("unknown"),
+      })
+      .default({
+        affected_system: "",
+        environment: "",
+        timestamp: "",
+        after_hours: false,
+        cloud_provider: "unknown",
+      }),
       screenshot_attachment: z
         .object({
           file_name: z.string().default(""),
@@ -198,18 +212,185 @@ function normalizeMessagesForModel(messages: any[]) {
 }
 
 function determineTicketingSystem(ticketDraft: any) {
+  const summary = String(ticketDraft?.summary || "").toLowerCase();
+  const description = String(ticketDraft?.description || "").toLowerCase();
+  const category = String(ticketDraft?.category || "").toLowerCase();
+  const subcategory = String(ticketDraft?.subcategory || "").toLowerCase();
+  const assignmentGroup = String(
+    ticketDraft?.assignment_group || "",
+  ).toLowerCase();
+
+  const combinedText = [
+    summary,
+    description,
+    category,
+    subcategory,
+    assignmentGroup,
+  ].join(" ");
+
+  if (
+    assignmentGroup.includes("cloudops") ||
+    assignmentGroup.includes("security") ||
+    assignmentGroup.includes("data")
+  ) {
+    return "jira";
+  }
+
+  if (assignmentGroup.includes("iam")) {
+    return "servicenow";
+  }
+
+  if (
+    combinedText.includes("billing") ||
+    combinedText.includes("subscription") ||
+    combinedText.includes("refund") ||
+    combinedText.includes("invoice") ||
+    combinedText.includes("product support") ||
+    combinedText.includes("external user")
+  ) {
+    return "zendesk";
+  }
+
+  if (
+    combinedText.includes("login") ||
+    combinedText.includes("password") ||
+    combinedText.includes("mfa") ||
+    combinedText.includes("employee") ||
+    combinedText.includes("laptop") ||
+    combinedText.includes("onboarding") ||
+    combinedText.includes("service desk")
+  ) {
+    return "servicenow";
+  }
+
   return "jira";
 }
 
 function buildMockResponse(latestMessage: string, afterHours: boolean) {
   const normalized = latestMessage.toLowerCase();
 
+  // ✅ ADD THIS BLOCK HERE (FIRST!)
+  if (
+    normalized.includes("production is down") ||
+    normalized.includes("prod is down") ||
+    normalized.includes("service is down") ||
+    normalized.includes("portal is down") ||
+    normalized.includes("outage") ||
+    normalized.includes("deployment") ||
+    normalized.includes("ecs") ||
+    normalized.includes("eks") ||
+    normalized.includes("aws") ||
+    normalized.includes("cloudfront") ||
+    normalized.includes("load balancer") ||
+    normalized.includes("customers cannot access the portal") ||
+    normalized.includes("cannot access the portal")
+  ) {
+    return {
+      id: crypto.randomUUID(),
+      response: `🚨 This looks like a production outage affecting customers.
+    
+    Let’s prioritize immediate triage:
+    
+    1. Check ECS service health in the AWS Console (desired vs running tasks).
+    2. Review recent deployment changes (task definition, image, env vars).
+    3. Check CloudWatch logs for errors or crashes.
+    4. Verify ALB target group health and health check failures.
+    5. Roll back to the previous working task definition if needed.
+    
+    Since this impacts customers, I would create a **high-priority incident ticket** and notify CloudOps immediately.
+    
+    Can you confirm:
+    - Which environment (prod/stage)?
+    - Any recent deployment changes?
+    - Are all services impacted or just one?`,
+      thinking: "Detected production outage / ECS issue — route to CloudOps",
+      user_mood: "frustrated",
+      suggested_questions: [
+        "We just deployed a new version",
+        "ALB health checks are failing",
+        "Rollback did not fix it",
+      ],
+      debug: {
+        context_used: false,
+        after_hours: afterHours,
+      },
+      matched_categories: ["infrastructure", "incident-support"],
+      redirect_to_agent: {
+        should_redirect: false,
+        reason: "",
+      },
+      support_workflow: {
+        intent: "issue",
+        issue_type: "production_outage",
+        ticketing_system: "jira",
+        cloud_provider: "aws",
+        target_system: "jira",
+        action_type: "create_ticket",
+        after_hours: afterHours,
+        business_hours: !afterHours,
+        needs_follow_up: false,
+        follow_up_questions: [],
+        troubleshooting_steps: [
+          "Check ECS service health",
+          "Review recent deployment changes",
+          "Check CloudWatch logs",
+          "Verify ALB target health",
+          "Rollback if necessary",
+        ],
+        attempted_resolution: false,
+        resolution_status: "unresolved",
+        should_create_ticket: true,
+        escalation_reason: "Production system is down affecting customers",
+        ticket_draft: {
+          summary: "[URGENT] Production ECS service down after deployment",
+          description:
+            "Production ECS service is down after deployment. Customers cannot access the portal. Initial triage steps suggested: ECS health check, logs, ALB verification, rollback.",
+          priority: "Critical",
+          issue_type: "Incident",
+          labels: ["incident", "production", "ecs", "aws", "urgent"],
+          assignment_group: "CloudOps Team",
+          assignment_reason: "Production outage in AWS ECS",
+          category: "infrastructure",
+          subcategory: "cloudops",
+          contact: {
+            name: "",
+            email: "",
+            phone: "",
+          },
+          error_condition: "service unavailable",
+          error_description: "Customers cannot access portal after deployment",
+          metadata: {
+            affected_system: "AWS ECS",
+            environment: "prod",
+            timestamp: new Date().toISOString(),
+            after_hours: afterHours,
+            cloud_provider: "aws",
+          },
+          screenshot_attachment: {
+            file_name: "",
+            file_type: "",
+            attached: false,
+          },
+        },
+      },
+      jira_ticket: {
+        attempted: false,
+        created: false,
+        key: "",
+        url: "",
+        error: "",
+      },
+    };
+  }
+
+  // 👇 EXISTING LOGIN BLOCK (KEEP THIS BELOW)
   if (
     normalized.includes("password") ||
     normalized.includes("login") ||
     normalized.includes("log in") ||
     normalized.includes("sign in") ||
-    normalized.includes("access")
+    normalized.includes("mfa") ||
+    normalized.includes("account locked")
   ) {
     return {
       id: crypto.randomUUID(),
@@ -726,10 +907,12 @@ Important operating rules:
 - If details are missing, ask concise follow-up questions.
 - When a ticket is needed, prepare a concise Jira-ready summary and description.
 - Include any troubleshooting already attempted in the ticket description.
-- If the issue is unresolved, collect contact information for the caller when available:
+- If the issue is unresolved and should_create_ticket = true, you must collect contact information before finalizing ticket creation whenever it is missing:
   - name
   - email
   - phone number
+- If any contact fields are missing, ask for them explicitly in follow_up_questions.
+- Do not assume contact information unless the user provided it.
 - Capture the error condition when available (for example: invalid credentials, timeout, access denied, VPN connection failed).
 - Capture a short but useful error description in plain language.
 - Populate metadata when available, including:
@@ -743,16 +926,21 @@ Important operating rules:
   - screenshot_attachment.file_type
   - screenshot_attachment.attached = true
 - If required ticket fields are missing, ask follow-up questions before moving to escalation.
+- If should_create_ticket is true and any contact information is missing (name, email, or phone), you must ask for it in follow_up_questions.
+- Do not proceed as if the ticket is complete until contact information is collected.
 - Be practical, concise, and support-oriented.
 
 Knowledge usage rules:
 - Use the knowledge base content below whenever it is relevant.
 - Do not invent Fortellar-specific policies, URLs, internal procedures, or system details that are not in the knowledge base.
-- When knowledge base support is weak or missing, you may still give safe, generic Tier 1 troubleshooting guidance for low-risk issues such as password/login/access troubleshooting.
+- When knowledge base support is weak or missing, you may still give safe, generic Tier 1 troubleshooting guidance for low-risk identity issues such as password reset, MFA, account lockout, or login troubleshooting.
+- Do NOT treat generic availability phrases like "cannot access portal", "site is down", "service unavailable", or "customers cannot reach the app" as password/login issues unless the user clearly describes an authentication problem.
 - If something requires organization-specific steps that are not in the knowledge base, say so clearly and move toward follow-up questions or ticket creation.
 
 Routing rules:
-- Route login, password, MFA, account lockout, and access issues to IAM Team
+- When knowledge base support is weak or missing, you may still give safe, generic Tier 1 troubleshooting guidance for low-risk identity issues such as password reset, MFA, account lockout, or login troubleshooting.
+- Route login, password, MFA, account lockout, and explicit authentication/identity issues to IAM Team
+- Route "portal down", "site unavailable", "customers cannot reach app", deployment failures, ECS/EKS/Lambda/API outages, AWS/Azure/GCP platform issues, and production availability incidents to CloudOps Team
 - Route infrastructure, deployment, AWS, cloud, DNS, network, and outage issues to CloudOps Team
 - Route phishing, suspicious activity, unauthorized access, malware, breach, and compliance issues to Security Team
 - Route reporting, dashboard, ETL, pipeline, warehouse, and data issues to Data Team
@@ -772,6 +960,7 @@ ${screenshot ? JSON.stringify(screenshot) : "No screenshot attached."}
 
 ${categoriesContext}
 
+If the message mentions AWS, ECS, EKS, deployment, outage, production down, portal unavailable, or customers unable to reach the application, classify it as an infrastructure/cloud incident, not a password/login issue.
 You must ALWAYS return valid JSON in exactly this shape:
 {
   "thinking": "brief internal reasoning",
@@ -790,7 +979,7 @@ You must ALWAYS return valid JSON in exactly this shape:
   "support_workflow": {
     "intent": "question|issue|troubleshooting|ticket_request|other",
     "issue_type": "short issue type like password_reset, login_issue, vpn_access, billing_question",
-    "ticketing_system": "one of: jira, servicenow, zendesk",
+    "ticketing_system": "jira|servicenow|zendesk",
     "after_hours": ${afterHours},
     "business_hours": ${businessHours},
     "needs_follow_up": true,
@@ -821,9 +1010,10 @@ You must ALWAYS return valid JSON in exactly this shape:
         "affected_system": "system or application name",
         "environment": "prod|uat|stage|dev or other value if known",
         "timestamp": "ISO timestamp if known",
-        "after_hours": ${afterHours}
+        "after_hours": ${afterHours},
+        "cloud_provider": "aws|azure|gcp|unknown"
       },
-      "screenshot_attachment": {
+        "screenshot_attachment": {
         "file_name": "screenshot filename if provided",
         "file_type": "image/png or image/jpeg if provided",
         "attached": false
@@ -838,6 +1028,7 @@ Choose a ticketing_system for the issue:
 - use "zendesk" for customer support, external user issues, billing questions, and product support cases
 
 Always include support_workflow.ticketing_system.
+If the issue mentions AWS, Azure, GCP, EC2, EKS, Azure AD, Entra, GKE, Cloud Run, S3, BigQuery, or similar cloud services, populate ticket_draft.metadata.cloud_provider accordingly.
 
 Response style rules:
 - Keep the response clear and actionable.
@@ -955,10 +1146,17 @@ Response style rules:
       validatedResponse.support_workflow.ticket_draft.category ||
       fallbackRouting.category;
 
-    validatedResponse.support_workflow.ticket_draft.subcategory =
-      validatedResponse.support_workflow.ticket_draft.subcategory ||
-      fallbackRouting.subcategory;
+    validatedResponse.support_workflow.ticket_draft.metadata = {
+      ...(validatedResponse.support_workflow.ticket_draft.metadata || {}),
+      cloud_provider:
+        validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider ||
+        determineCloudProvider(validatedResponse.support_workflow.ticket_draft),
+    };
 
+    const detectedCloudProvider =
+      validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider ||
+      "unknown";
+    
     validatedResponse.support_workflow.ticket_draft.labels = Array.from(
       new Set([
         ...(validatedResponse.support_workflow.ticket_draft.labels || []),
@@ -971,10 +1169,17 @@ Response style rules:
         validatedResponse.support_workflow.ticket_draft.subcategory
           .toLowerCase()
           .replace(/\s+/g, "-"),
+        `cloud-${detectedCloudProvider}`,
       ]),
     );
 
     console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
+    const contact = validatedResponse.support_workflow.ticket_draft.contact || {};
+
+    const missingContactInfo =
+      !contact.name?.trim() ||
+      !contact.email?.trim() ||
+      !contact.phone?.trim();
     let externalTicket = {
       attempted: false,
       created: false,
@@ -993,7 +1198,8 @@ Response style rules:
     
     if (
       validatedResponse.support_workflow.should_create_ticket &&
-      validatedResponse.support_workflow.resolution_status !== "resolved"
+      validatedResponse.support_workflow.resolution_status !== "resolved" &&
+      !missingContactInfo
     ) {
       console.log("ABOUT TO CREATE EXTERNAL TICKET");
       console.log("SCREENSHOT FILE RECEIVED:", {
@@ -1010,12 +1216,11 @@ Response style rules:
     
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
+    const priority =
+      validatedResponse.support_workflow.ticket_draft.priority;
+    
     const shouldSendTeamsAlert =
-      externalTicket.created &&
-      (
-        validatedResponse.support_workflow.ticket_draft.priority === "Critical" ||
-        validatedResponse.support_workflow.ticket_draft.labels?.includes("urgent")
-      );
+      externalTicket.created && priority === "Critical";
     
     console.log("SHOULD SEND TEAMS ALERT:", shouldSendTeamsAlert);
     

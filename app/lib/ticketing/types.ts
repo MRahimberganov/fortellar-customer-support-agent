@@ -4,6 +4,9 @@ export type ScreenshotPayload = {
   content_base64: string;
 };
 
+export type TicketingSystem = "jira" | "servicenow" | "zendesk" | "other";
+export type CloudProvider = "aws" | "azure" | "gcp" | "unknown";
+
 export type TicketDraft = {
   summary: string;
   description: string;
@@ -26,6 +29,7 @@ export type TicketDraft = {
     environment?: string;
     timestamp?: string;
     after_hours?: boolean;
+    cloud_provider?: CloudProvider;
   };
   screenshot_attachment?: {
     file_name?: string;
@@ -41,3 +45,8 @@ export type TicketResult = {
   url: string;
   error: string;
 };
+
+export type TicketProviderHandler = (
+  ticketDraft: TicketDraft,
+  screenshotFile?: ScreenshotPayload | null,
+) => Promise<TicketResult>;

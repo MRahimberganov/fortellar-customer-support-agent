@@ -215,6 +215,7 @@ Error Description: ${ticketDraft.error_description || "N/A"}
 Metadata:
 Affected System: ${ticketDraft.metadata?.affected_system || "N/A"}
 Environment: ${ticketDraft.metadata?.environment || "N/A"}
+Cloud Provider: ${ticketDraft.metadata?.cloud_provider || "unknown"}
 Timestamp: ${ticketDraft.metadata?.timestamp || "N/A"}
 After Hours: ${ticketDraft.metadata?.after_hours ?? "N/A"}
 

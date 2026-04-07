@@ -1,10 +1,9 @@
-import { createJiraTicket } from "./jira";
-import { createServiceNowTicket } from "./servicenow";
-import { createZendeskTicket } from "./zendesk";
+import { ticketProviderRegistry } from "./providerRegistry";
 import type {
   TicketDraft,
   TicketResult,
   ScreenshotPayload,
+  TicketingSystem,
 } from "./types";
 
 export async function createExternalTicket(
@@ -12,15 +11,10 @@ export async function createExternalTicket(
   ticketDraft: TicketDraft,
   screenshotFile?: ScreenshotPayload | null,
 ): Promise<TicketResult> {
-  switch ((system || "jira").toLowerCase()) {
-    case "servicenow":
-      return createServiceNowTicket(ticketDraft);
+  const normalizedSystem = ((system || "jira").toLowerCase() as TicketingSystem);
 
-    case "zendesk":
-      return createZendeskTicket(ticketDraft);
+  const provider =
+    ticketProviderRegistry[normalizedSystem] || ticketProviderRegistry.jira;
 
-    case "jira":
-    default:
-      return createJiraTicket(ticketDraft, screenshotFile);
-  }
+  return provider(ticketDraft, screenshotFile);
 }
