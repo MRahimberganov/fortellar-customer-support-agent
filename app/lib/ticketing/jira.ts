@@ -1,11 +1,70 @@
-import type { TicketDraft, TicketResult } from "./types";
+import type {
+  TicketDraft,
+  TicketResult,
+  ScreenshotPayload,
+} from "./types";
 import { determineAssignmentGroup } from "./routing";
+
+async function uploadJiraAttachment(
+  issueKey: string,
+  screenshotFile: ScreenshotPayload,
+): Promise<void> {
+  const baseUrl = process.env.JIRA_BASE_URL;
+  const email = process.env.JIRA_EMAIL;
+  const apiToken = process.env.JIRA_API_TOKEN;
+
+  if (!baseUrl || !email || !apiToken) {
+    throw new Error(
+      "Jira attachment upload environment variables are not fully configured.",
+    );
+  }
+
+  const bytes = Buffer.from(screenshotFile.content_base64, "base64");
+  const uint8 = new Uint8Array(bytes);
+  
+  const blob = new Blob([uint8], {
+    type: screenshotFile.file_type || "application/octet-stream",
+  });
+
+  const formData = new FormData();
+  formData.append(
+    "file",
+    blob,
+    screenshotFile.file_name || "screenshot.png",
+  );
+
+  const response = await fetch(
+    `${baseUrl}/rest/api/3/issue/${issueKey}/attachments`,
+    {
+      method: "POST",
+      headers: {
+        Authorization:
+          "Basic " + Buffer.from(`${email}:${apiToken}`).toString("base64"),
+        Accept: "application/json",
+        "X-Atlassian-Token": "no-check",
+      },
+      body: formData,
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      `Jira attachment upload failed: ${response.status} ${JSON.stringify(data)}`,
+    );
+  }
+}
 
 function mapJiraPriority(ticketDraft: TicketDraft) {
   const summary = String(ticketDraft?.summary || "").toLowerCase();
   const description = String(ticketDraft?.description || "").toLowerCase();
-  const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
-  const errorDescription = String(ticketDraft?.error_description || "").toLowerCase();
+  const errorCondition = String(
+    ticketDraft?.error_condition || "",
+  ).toLowerCase();
+  const errorDescription = String(
+    ticketDraft?.error_description || "",
+  ).toLowerCase();
 
   const combinedText = [
     summary,
@@ -72,6 +131,7 @@ function mapJiraAssignee(ticketDraft: TicketDraft) {
 
 export async function createJiraTicket(
   ticketDraft: TicketDraft,
+  screenshotFile?: ScreenshotPayload | null,
 ): Promise<TicketResult> {
   const baseUrl = process.env.JIRA_BASE_URL;
   const email = process.env.JIRA_EMAIL;
@@ -189,6 +249,21 @@ Screenshot File: ${ticketDraft.screenshot_attachment?.file_name || "N/A"}`,
             ? JSON.stringify(data.errors)
             : data?.errorMessages?.join(", ") || "Unknown Jira error",
       };
+    }
+
+    if (data?.key && screenshotFile?.content_base64) {
+      try {
+        await uploadJiraAttachment(data.key, screenshotFile);
+        console.log("JIRA ATTACHMENT UPLOAD SUCCESS:", {
+          issueKey: data.key,
+          fileName: screenshotFile.file_name,
+        });
+      } catch (attachmentError: any) {
+        console.error("JIRA ATTACHMENT UPLOAD FAILED:", {
+          issueKey: data.key,
+          error: attachmentError?.message || String(attachmentError),
+        });
+      }
     }
 
     return {

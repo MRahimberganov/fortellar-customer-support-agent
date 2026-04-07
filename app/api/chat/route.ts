@@ -40,7 +40,7 @@ const responseSchema = z.object({
       "other",
     ]),
     issue_type: z.string().default("general"),
-    ticketing_system: z.string().default("jira"),
+    ticketing_system: z.string().optional(),
     after_hours: z.boolean(),
     business_hours: z.boolean(),
     needs_follow_up: z.boolean(),
@@ -197,28 +197,7 @@ function normalizeMessagesForModel(messages: any[]) {
 }
 
 function determineTicketingSystem(ticketDraft: any) {
-  const assignmentGroup = String(ticketDraft?.assignment_group || "").toLowerCase();
-  const category = String(ticketDraft?.category || "").toLowerCase();
-
-  if (
-    assignmentGroup.includes("cloudops") ||
-    assignmentGroup.includes("security") ||
-    assignmentGroup.includes("data") ||
-    category.includes("infrastructure") ||
-    category.includes("security") ||
-    category.includes("data")
-  ) {
-    return "jira";
-  }
-
-  if (
-    assignmentGroup.includes("iam") ||
-    category.includes("access")
-  ) {
-    return "servicenow";
-  }
-
-  return "zendesk";
+  return "jira";
 }
 
 function buildMockResponse(latestMessage: string, afterHours: boolean) {
@@ -583,6 +562,7 @@ export async function POST(req: Request) {
     model,
     knowledgeBaseId,
     screenshot,
+    screenshot_file,
   } = await req.json();
   const latestMessage = messages?.[messages.length - 1]?.content || "";
 
@@ -921,6 +901,43 @@ Response style rules:
     }
     
     const validatedResponse = responseSchema.parse(parsedResponse);
+    if (screenshot_file?.file_name) {
+      validatedResponse.support_workflow.ticket_draft.screenshot_attachment = {
+        file_name: screenshot_file.file_name,
+        file_type: screenshot_file.file_type || "",
+        attached: true,
+      };
+    }
+    const latestMessageLower = latestMessage.toLowerCase();
+
+    const isUrgent =
+      validatedResponse.support_workflow.ticket_draft.priority === "Critical" ||
+      validatedResponse.support_workflow.escalation_reason
+        ?.toLowerCase()
+        .includes("urgent") ||
+      latestMessageLower.includes("urgent") ||
+      latestMessageLower.includes("asap") ||
+      latestMessageLower.includes("production is down") ||
+      latestMessageLower.includes("critical");
+    
+    if (isUrgent) {
+      const currentSummary =
+        validatedResponse.support_workflow.ticket_draft.summary || "";
+    
+      // Add [URGENT] prefix
+      if (!currentSummary.startsWith("[URGENT]")) {
+        validatedResponse.support_workflow.ticket_draft.summary =
+          `[URGENT] ${currentSummary}`;
+      }
+    
+      // Add urgent label
+      validatedResponse.support_workflow.ticket_draft.labels = Array.from(
+        new Set([
+          ...(validatedResponse.support_workflow.ticket_draft.labels || []),
+          "urgent",
+        ]),
+      );
+    }
     const fallbackRouting = determineAssignmentGroup(
       validatedResponse.support_workflow.ticket_draft,
     );
@@ -965,16 +982,8 @@ Response style rules:
       error: "",
     };
     
-    const aiTicketingSystem = String(
-      validatedResponse.support_workflow.ticketing_system || "",
-    ).toLowerCase();
-    
-    if (!["jira", "servicenow", "zendesk"].includes(aiTicketingSystem)) {
-      validatedResponse.support_workflow.ticketing_system =
-        determineTicketingSystem(validatedResponse.support_workflow.ticket_draft);
-    } else {
-      validatedResponse.support_workflow.ticketing_system = aiTicketingSystem;
-    }
+    validatedResponse.support_workflow.ticketing_system =
+      determineTicketingSystem(validatedResponse.support_workflow.ticket_draft);
     
     console.log(
       "SELECTED TICKETING SYSTEM:",
@@ -986,10 +995,18 @@ Response style rules:
       validatedResponse.support_workflow.resolution_status !== "resolved"
     ) {
       console.log("ABOUT TO CREATE EXTERNAL TICKET");
+      console.log("SCREENSHOT FILE RECEIVED:", {
+        hasScreenshotFile: !!screenshot_file,
+        fileName: screenshot_file?.file_name || "",
+        fileType: screenshot_file?.file_type || "",
+      });
+    
       externalTicket = await createExternalTicket(
         validatedResponse.support_workflow.ticketing_system,
         validatedResponse.support_workflow.ticket_draft,
+        screenshot_file,
       );
+    
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
     

@@ -1,3 +1,9 @@
+export type ScreenshotPayload = {
+  file_name: string;
+  file_type: string;
+  content_base64: string;
+};
+
 export type TicketDraft = {
   summary: string;
   description: string;

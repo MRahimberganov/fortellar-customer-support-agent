@@ -1,11 +1,16 @@
 import { createJiraTicket } from "./jira";
 import { createServiceNowTicket } from "./servicenow";
 import { createZendeskTicket } from "./zendesk";
-import type { TicketDraft, TicketResult } from "./types";
+import type {
+  TicketDraft,
+  TicketResult,
+  ScreenshotPayload,
+} from "./types";
 
 export async function createExternalTicket(
   system: string,
   ticketDraft: TicketDraft,
+  screenshotFile?: ScreenshotPayload | null,
 ): Promise<TicketResult> {
   switch ((system || "jira").toLowerCase()) {
     case "servicenow":
@@ -16,6 +21,6 @@ export async function createExternalTicket(
 
     case "jira":
     default:
-      return createJiraTicket(ticketDraft);
+      return createJiraTicket(ticketDraft, screenshotFile);
   }
 }
