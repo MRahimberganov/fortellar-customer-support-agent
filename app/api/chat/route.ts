@@ -1245,21 +1245,25 @@ Response style rules:
         validatedResponse.support_workflow.ticket_draft,
         screenshot_file,
       );
-
-    if (externalTicket.created) {
-      validatedResponse.response = `Your support ticket has been created successfully.
     
-    Ticket: ${externalTicket.key}
-    Link: ${externalTicket.url}
-    
-    It has been routed to ${validatedResponse.support_workflow.ticket_draft.assignment_group} with ${validatedResponse.support_workflow.ticket_draft.priority} priority.`;
-    
-      validatedResponse.support_workflow.needs_follow_up = false;
-      validatedResponse.support_workflow.follow_up_questions = [];
-    }
+      if (externalTicket.created) {
+        validatedResponse.response = [
+          `**Ticket ID:** ${externalTicket.key}`,
+          `**Link:** [Open Jira Ticket](${externalTicket.url})`,
+          ``,
+          `**Routed to:** ${validatedResponse.support_workflow.ticket_draft.assignment_group}`,
+          `**Priority:** ${validatedResponse.support_workflow.ticket_draft.priority}`,
+          ``,
+          `Our team has been notified and is investigating.`,
+        ].join("\n");
+      
+        validatedResponse.support_workflow.needs_follow_up = false;
+        validatedResponse.support_workflow.follow_up_questions = [];
+      }
     
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
+    
     const priority =
       validatedResponse.support_workflow.ticket_draft.priority;
     

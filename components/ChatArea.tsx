@@ -13,12 +13,10 @@ import {
   LifeBuoyIcon,
   BookOpenText,
   ChevronDown,
-  Send,
 } from "lucide-react";
 import "highlight.js/styles/atom-one-dark.css";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import Image from "next/image";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,11 +46,35 @@ type ThinkingContent = {
   matched_categories?: string[];
 };
 
+type Model = {
+  id: string;
+  name: string;
+};
+
+type KnowledgeBase = {
+  id: string;
+  name: string;
+};
+
+interface Message {
+  id: string;
+  role: string;
+  content: string;
+  attachment?: {
+    file_name: string;
+    file_type: string;
+    attached: boolean;
+  };
+}
+
 interface ConversationHeaderProps {
   selectedModel: string;
   setSelectedModel: (modelId: string) => void;
   models: Model[];
   showAvatar: boolean;
+  selectedKnowledgeBase: string;
+  setSelectedKnowledgeBase: (knowledgeBaseId: string) => void;
+  knowledgeBases: KnowledgeBase[];
 }
 
 const UISelector = ({
@@ -98,11 +120,11 @@ const SuggestedQuestions = ({
   if (!questions || questions.length === 0) return null;
 
   return (
-    <div className="mt-2 pl-10">
+    <div className="mt-2 pl-10 flex flex-wrap gap-2">
       {questions.map((question, index) => (
         <Button
           key={index}
-          className="text-sm mb-2 mr-2 ml-0 text-gray-500 shadow-sm"
+          className="text-sm text-gray-500 shadow-sm"
           variant="outline"
           size="sm"
           onClick={() => onQuestionClick(question)}
@@ -175,52 +197,91 @@ const MessageContent = ({
   }
 
   if (error && !parsed.response) {
-    return <div>The assistant is temporarily unavailable. Please try again later.</div>;
+    return (
+      <div>The assistant is temporarily unavailable. Please try again later.</div>
+    );
+  }
+
+  const isTicketConfirmation =
+    (parsed.response || "").includes("**Ticket ID:**") &&
+    (parsed.response || "").includes("**Routed to:**");
+
+  if (isTicketConfirmation) {
+    const responseText = parsed.response || content;
+
+    const ticketIdMatch = responseText.match(/\*\*Ticket ID:\*\*\s*(.+)/);
+    const linkMatch = responseText.match(
+      /\*\*Link:\*\*\s*\[([^\]]+)\]\(([^)]+)\)/
+    );
+    const routedToMatch = responseText.match(/\*\*Routed to:\*\*\s*(.+)/);
+    const priorityMatch = responseText.match(/\*\*Priority:\*\*\s*(.+)/);
+
+    const ticketId = ticketIdMatch?.[1] || "";
+    const linkLabel = linkMatch?.[1] || "Open Jira Ticket";
+    const linkUrl = linkMatch?.[2] || "";
+    const routedTo = routedToMatch?.[1] || "";
+    const priority = priorityMatch?.[1] || "";
+
+    return (
+      <>
+        <div className="rounded-lg border bg-white p-4 shadow-sm space-y-3">
+          <div className="font-semibold text-green-700">
+            ✅ Ticket Created Successfully
+          </div>
+
+          <div className="space-y-2 text-sm text-black">
+            <div>
+              <span className="font-semibold">Ticket ID:</span> {ticketId}
+            </div>
+
+            <div>
+              <span className="font-semibold">Link:</span>{" "}
+              {linkUrl ? (
+                <a
+                  href={linkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+                >
+                  Open Jira Ticket
+                </a>
+              ) : (
+                linkLabel
+              )}
+            </div>
+
+            <div>
+              <span className="font-semibold">Routed to:</span> {routedTo}
+            </div>
+
+            <div>
+              <span className="font-semibold">Priority:</span>{" "}
+              <span className="text-red-600 font-medium">{priority}</span>
+            </div>
+
+            <div>Our team has been notified and is investigating.</div>
+          </div>
+        </div>
+
+        {parsed.redirect_to_agent && (
+          <UISelector redirectToAgent={parsed.redirect_to_agent} />
+        )}
+      </>
+    );
   }
 
   return (
     <>
-      <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeHighlight]}>
-        {parsed.response || content}
-      </ReactMarkdown>
+      <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-strong:text-black prose-a:text-blue-600 prose-a:underline">
+        <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeHighlight]}>
+          {parsed.response || content}
+        </ReactMarkdown>
+      </div>
       {parsed.redirect_to_agent && (
         <UISelector redirectToAgent={parsed.redirect_to_agent} />
       )}
     </>
   );
-};
-
-// Define a type for the model
-type Model = {
-  id: string;
-  name: string;
-};
-
-interface Message {
-  id: string;
-  role: string;
-  content: string;
-  attachment?: {
-    file_name: string;
-    file_type: string;
-    attached: boolean;
-  };
-}
-
-// Define the props interface for ConversationHeader
-interface ConversationHeaderProps {
-  selectedModel: string;
-  setSelectedModel: (modelId: string) => void;
-  models: Model[];
-  showAvatar: boolean;
-  selectedKnowledgeBase: string;
-  setSelectedKnowledgeBase: (knowledgeBaseId: string) => void;
-  knowledgeBases: KnowledgeBase[];
-}
-
-type KnowledgeBase = {
-  id: string;
-  name: string;
 };
 
 const ConversationHeader: React.FC<ConversationHeaderProps> = ({
@@ -246,7 +307,9 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             <AvatarFallback>AI</AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="text-sm font-medium leading-none">Fortellar Assistant</h3>
+            <h3 className="text-sm font-medium leading-none">
+              Fortellar Assistant
+            </h3>
             <p className="text-sm text-muted-foreground">Customer support</p>
           </div>
         </>
@@ -277,6 +340,7 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -285,7 +349,8 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
             className="min-w-0 flex-1 justify-between overflow-hidden text-muted-foreground"
           >
             <span className="truncate">
-              {knowledgeBases.find((kb) => kb.id === selectedKnowledgeBase)?.name || "Select KB"}
+              {knowledgeBases.find((kb) => kb.id === selectedKnowledgeBase)
+                ?.name || "Select KB"}
             </span>
             <ChevronDown className="ml-2 h-4 w-4" />
           </Button>
@@ -323,13 +388,9 @@ async function fileToBase64(file: File): Promise<string> {
 function ChatArea() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [selectedScreenshot, setSelectedScreenshot] = useState<File | null>(null);
-  const handleScreenshotChange = (
-  event: React.ChangeEvent<HTMLInputElement>,
-) => {
-  const file = event.target.files?.[0] || null;
-  setSelectedScreenshot(file);
-};
+  const [selectedScreenshot, setSelectedScreenshot] = useState<File | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [showHeader, setShowHeader] = useState(false);
   const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
@@ -337,21 +398,21 @@ function ChatArea() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState(
-    "your-knowledge-base-id",
+    "your-knowledge-base-id"
   );
+
+  const handleScreenshotChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0] || null;
+    setSelectedScreenshot(file);
+  };
 
   const knowledgeBases: KnowledgeBase[] = [
     { id: "your-knowledge-base-id", name: "Knowledge Base" },
-    // Add more knowledge bases as needed
   ];
 
-  const models = [
-    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
-  ];
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const models = [{ id: "gpt-4o-mini", name: "GPT-4o Mini" }];
 
   useEffect(() => {
     console.log("🔍 Messages changed! Count:", messages.length);
@@ -373,40 +434,36 @@ function ChatArea() {
 
   useEffect(() => {
     if (!config.includeLeftSidebar) {
-      // If LeftSidebar is not included, we need to handle the 'updateSidebar' event differently
       const handleUpdateSidebar = (event: CustomEvent<ThinkingContent>) => {
         console.log("LeftSidebar not included. Event data:", event.detail);
-        // You might want to handle this data differently when LeftSidebar is not present
       };
 
       window.addEventListener(
         "updateSidebar" as any,
-        handleUpdateSidebar as EventListener,
+        handleUpdateSidebar as EventListener
       );
       return () =>
         window.removeEventListener(
           "updateSidebar" as any,
-          handleUpdateSidebar as EventListener,
+          handleUpdateSidebar as EventListener
         );
     }
   }, []);
 
   useEffect(() => {
     if (!config.includeRightSidebar) {
-      // If RightSidebar is not included, we need to handle the 'updateRagSources' event differently
       const handleUpdateRagSources = (event: CustomEvent) => {
         console.log("RightSidebar not included. RAG sources:", event.detail);
-        // You might want to handle this data differently when RightSidebar is not present
       };
 
       window.addEventListener(
         "updateRagSources" as any,
-        handleUpdateRagSources as EventListener,
+        handleUpdateRagSources as EventListener
       );
       return () =>
         window.removeEventListener(
           "updateRagSources" as any,
-          handleUpdateRagSources as EventListener,
+          handleUpdateRagSources as EventListener
         );
     }
   }, []);
@@ -428,7 +485,7 @@ function ChatArea() {
   };
 
   const handleSubmit = async (
-    event: React.FormEvent<HTMLFormElement> | string,
+    event: React.FormEvent<HTMLFormElement> | string
   ) => {
     if (typeof event !== "string") {
       event.preventDefault();
@@ -479,7 +536,7 @@ function ChatArea() {
         content_base64: await fileToBase64(selectedScreenshot),
       };
     }
-    
+
     setMessages((prevMessages) => [
       ...prevMessages,
       userMessage,
@@ -500,6 +557,7 @@ function ChatArea() {
         fileType: screenshotPayload?.file_type || "",
         hasBase64: !!screenshotPayload?.content_base64,
       });
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -539,7 +597,7 @@ function ChatArea() {
       console.log("⬅️ Received response from API:", data);
 
       const suggestedQuestionsHeader = response.headers.get(
-        "x-suggested-questions",
+        "x-suggested-questions"
       );
       if (suggestedQuestionsHeader) {
         data.suggested_questions = JSON.parse(suggestedQuestionsHeader);
@@ -548,10 +606,7 @@ function ChatArea() {
       const ragHeader = response.headers.get("x-rag-sources");
       if (ragHeader) {
         const ragProcessed = performance.now();
-        logDuration(
-          "🔍 RAG Processing Duration",
-          ragProcessed - responseReceived,
-        );
+        logDuration("🔍 RAG Processing Duration", ragProcessed - responseReceived);
         const sources = JSON.parse(ragHeader);
         window.dispatchEvent(
           new CustomEvent("updateRagSources", {
@@ -560,7 +615,7 @@ function ChatArea() {
               query: userMessage.content,
               debug: data.debug,
             },
-          }),
+          })
         );
       }
 
@@ -593,7 +648,7 @@ function ChatArea() {
         window.dispatchEvent(
           new CustomEvent("agentRedirectRequested", {
             detail: data.redirect_to_agent,
-          }),
+          })
         );
       }
     } catch (error) {
@@ -662,6 +717,7 @@ function ChatArea() {
                   width={40}
                   height={40}
                 />
+                <AvatarFallback>AI</AvatarFallback>
               </Avatar>
               <h2 className="text-2xl font-semibold mb-8">
                 Here&apos;s how I can help
@@ -695,7 +751,7 @@ function ChatArea() {
               {messages.map((message, index) => (
                 <div key={message.id}>
                   <div
-                    className={`flex items-start ${
+                    className={`flex items-start gap-2 ${
                       message.role === "user" ? "justify-end" : ""
                     } ${
                       index === messages.length - 1 ? "animate-fade-in-up" : ""
@@ -706,7 +762,7 @@ function ChatArea() {
                     }}
                   >
                     {message.role === "assistant" && (
-                      <Avatar className="w-8 h-8 mr-2 border">
+                      <Avatar className="w-8 h-8 border shrink-0">
                         <AvatarImage
                           src="/ant-logo.svg"
                           alt="AI Assistant Avatar"
@@ -715,7 +771,7 @@ function ChatArea() {
                       </Avatar>
                     )}
                     <div
-                      className={`p-3 rounded-md text-sm max-w-[65%] ${
+                      className={`p-3 rounded-md text-sm max-w-[75%] ${
                         message.role === "user"
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted border"
@@ -727,23 +783,30 @@ function ChatArea() {
                       />
                     </div>
                   </div>
-                  {message.role === "assistant" && (() => {
-                    try {
-                      const parsed = JSON.parse(message.content);
-                      console.log("💡 Suggested Questions:", parsed.suggested_questions);
-                  
-                      return (
-                        <SuggestedQuestions
-                          questions={parsed.suggested_questions || []}
-                          onQuestionClick={handleSuggestedQuestionClick}
-                          isLoading={isLoading}
-                        />
-                      );
-                    } catch (e) {
-                      console.warn("❌ Failed to parse suggested questions", e);
-                      return null;
-                    }
-                  })()}
+                  {message.role === "assistant" &&
+                    (() => {
+                      try {
+                        const parsed = JSON.parse(message.content);
+                        console.log(
+                          "💡 Suggested Questions:",
+                          parsed.suggested_questions
+                        );
+
+                        return (
+                          <SuggestedQuestions
+                            questions={parsed.suggested_questions || []}
+                            onQuestionClick={handleSuggestedQuestionClick}
+                            isLoading={isLoading}
+                          />
+                        );
+                      } catch (e) {
+                        console.warn(
+                          "❌ Failed to parse suggested questions",
+                          e
+                        );
+                        return null;
+                      }
+                    })()}
                 </div>
               ))}
               <div ref={messagesEndRef} style={{ height: "1px" }} />
@@ -766,13 +829,13 @@ function ChatArea() {
             className="min-h-[44px] resize-none rounded-xl border-0 bg-background p-3 shadow-none focus-visible:ring-0"
             rows={1}
           />
-      
+
           {selectedScreenshot && (
             <div className="px-3 pb-1 text-xs text-muted-foreground">
               Attached: {selectedScreenshot.name}
             </div>
           )}
-      
+
           <div className="flex items-center justify-between px-3 pb-3 pt-2">
             <label className="cursor-pointer rounded-md border px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted">
               📎 Attach Screenshot
@@ -783,7 +846,7 @@ function ChatArea() {
                 onChange={handleScreenshotChange}
               />
             </label>
-      
+
             <Button
               type="submit"
               disabled={isLoading || input.trim() === ""}
