@@ -58,6 +58,10 @@ const responseSchema = z.object({
       priority: z.string().default("Medium"),
       issue_type: z.string().default("Support"),
       labels: z.array(z.string()).default([]),
+      assignment_group: z.string().default("General Support"),
+      assignment_reason: z.string().default(""),
+      category: z.string().default("general"),
+      subcategory: z.string().default("general"),
       contact: z
         .object({
           name: z.string().default(""),
@@ -231,7 +235,7 @@ function mapJiraPriority(ticketDraft: any) {
   return "Low";
 }
 
-function mapJiraAssignee(ticketDraft: any) {
+function determineAssignmentGroup(ticketDraft: any) {
   const summary = String(ticketDraft?.summary || "").toLowerCase();
   const description = String(ticketDraft?.description || "").toLowerCase();
   const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
@@ -244,18 +248,111 @@ function mapJiraAssignee(ticketDraft: any) {
     errorDescription,
   ].join(" ");
 
-  const loginAssignee = process.env.JIRA_LOGIN_ASSIGNEE_ACCOUNT_ID;
-
   if (
     combinedText.includes("log in") ||
     combinedText.includes("login") ||
+    combinedText.includes("sign in") ||
     combinedText.includes("password") ||
-    combinedText.includes("access") ||
+    combinedText.includes("access denied") ||
+    combinedText.includes("account locked") ||
     combinedText.includes("mfa")
   ) {
-    if (loginAssignee) {
-      return { accountId: loginAssignee };
-    }
+    return {
+      assignment_group: "IAM Team",
+      assignment_reason: "Detected login, password, MFA, or access-related issue.",
+      category: "access",
+      subcategory: "login",
+    };
+  }
+
+  if (
+    combinedText.includes("outage") ||
+    combinedText.includes("deployment") ||
+    combinedText.includes("server") ||
+    combinedText.includes("aws") ||
+    combinedText.includes("cloud") ||
+    combinedText.includes("infrastructure") ||
+    combinedText.includes("infra") ||
+    combinedText.includes("dns") ||
+    combinedText.includes("network") ||
+    combinedText.includes("container") ||
+    combinedText.includes("kubernetes") ||
+    combinedText.includes("service down")
+  ) {
+    return {
+      assignment_group: "CloudOps Team",
+      assignment_reason: "Detected infrastructure, cloud platform, deployment, or outage issue.",
+      category: "infrastructure",
+      subcategory: "cloudops",
+    };
+  }
+
+  if (
+    combinedText.includes("security") ||
+    combinedText.includes("phishing") ||
+    combinedText.includes("malware") ||
+    combinedText.includes("breach") ||
+    combinedText.includes("unauthorized") ||
+    combinedText.includes("suspicious") ||
+    combinedText.includes("vpn compromise") ||
+    combinedText.includes("compliance")
+  ) {
+    return {
+      assignment_group: "Security Team",
+      assignment_reason: "Detected security, suspicious activity, or compliance-related issue.",
+      category: "security",
+      subcategory: "incident",
+    };
+  }
+
+  if (
+    combinedText.includes("data") ||
+    combinedText.includes("pipeline") ||
+    combinedText.includes("etl") ||
+    combinedText.includes("dashboard") ||
+    combinedText.includes("report") ||
+    combinedText.includes("warehouse") ||
+    combinedText.includes("job failed") ||
+    combinedText.includes("report failed")
+  ) {
+    return {
+      assignment_group: "Data Team",
+      assignment_reason: "Detected data, reporting, ETL, or pipeline issue.",
+      category: "data",
+      subcategory: "pipeline",
+    };
+  }
+
+  return {
+    assignment_group: "General Support",
+    assignment_reason: "No strong routing keyword detected.",
+    category: "general",
+    subcategory: "general",
+  };
+}
+
+function mapJiraAssignee(ticketDraft: any) {
+  const routing = determineAssignmentGroup(ticketDraft);
+
+  const iamAssignee = process.env.JIRA_IAM_ASSIGNEE_ACCOUNT_ID;
+  const cloudOpsAssignee = process.env.JIRA_CLOUDOPS_ASSIGNEE_ACCOUNT_ID;
+  const securityAssignee = process.env.JIRA_SECURITY_ASSIGNEE_ACCOUNT_ID;
+  const dataAssignee = process.env.JIRA_DATA_ASSIGNEE_ACCOUNT_ID;
+
+  if (routing.assignment_group === "IAM Team" && iamAssignee) {
+    return { accountId: iamAssignee };
+  }
+
+  if (routing.assignment_group === "CloudOps Team" && cloudOpsAssignee) {
+    return { accountId: cloudOpsAssignee };
+  }
+
+  if (routing.assignment_group === "Security Team" && securityAssignee) {
+    return { accountId: securityAssignee };
+  }
+
+  if (routing.assignment_group === "Data Team" && dataAssignee) {
+    return { accountId: dataAssignee };
   }
 
   return undefined;
@@ -268,6 +365,31 @@ async function createJiraTicket(ticketDraft: any) {
   const apiToken = process.env.JIRA_API_TOKEN;
   const projectKey = process.env.JIRA_PROJECT_KEY;
   const issueType = process.env.JIRA_ISSUE_TYPE || "Task";
+  const routing = determineAssignmentGroup(ticketDraft);
+
+    ticketDraft.assignment_group =
+      ticketDraft.assignment_group || routing.assignment_group;
+    ticketDraft.assignment_reason =
+      ticketDraft.assignment_reason || routing.assignment_reason;
+    ticketDraft.category = ticketDraft.category || routing.category;
+    ticketDraft.subcategory = ticketDraft.subcategory || routing.subcategory;
+  
+    ticketDraft.labels = Array.from(
+      new Set([
+        ...(Array.isArray(ticketDraft.labels) ? ticketDraft.labels : []),
+        "support-agent",
+        ticketDraft.assignment_group.toLowerCase().replace(/\s+/g, "-"),
+        ticketDraft.category.toLowerCase().replace(/\s+/g, "-"),
+        ticketDraft.subcategory.toLowerCase().replace(/\s+/g, "-"),
+      ]),
+    );
+  
+    console.log("ROUTING DECISION:", {
+      assignment_group: ticketDraft.assignment_group,
+      assignment_reason: ticketDraft.assignment_reason,
+      category: ticketDraft.category,
+      subcategory: ticketDraft.subcategory,
+    });
     console.log("JIRA CONFIG CHECK:", {
       baseUrl,
       email,
@@ -318,21 +440,31 @@ async function createJiraTicket(ticketDraft: any) {
                   {
                     type: "text",
                     text: `${ticketDraft.description || "Issue reported through support agent."}
-          
-          Contact Name: ${ticketDraft.contact?.name || "N/A"}
-          Contact Email: ${ticketDraft.contact?.email || "N/A"}
-          Contact Phone: ${ticketDraft.contact?.phone || "N/A"}
-          
-          Error Condition: ${ticketDraft.error_condition || "N/A"}
-          Error Description: ${ticketDraft.error_description || "N/A"}
-          
-          Affected System: ${ticketDraft.metadata?.affected_system || "N/A"}
-          Environment: ${ticketDraft.metadata?.environment || "N/A"}
-          Timestamp: ${ticketDraft.metadata?.timestamp || "N/A"}
-          After Hours: ${ticketDraft.metadata?.after_hours ?? "N/A"}
-          
-          Screenshot Attached: ${ticketDraft.screenshot_attachment?.attached ? "Yes" : "No"}
-          Screenshot File: ${ticketDraft.screenshot_attachment?.file_name || "N/A"}`,
+
+            Routing Details:
+            Assignment Group: ${ticketDraft.assignment_group || "General Support"}
+            Assignment Reason: ${ticketDraft.assignment_reason || "N/A"}
+            Category: ${ticketDraft.category || "general"}
+            Subcategory: ${ticketDraft.subcategory || "general"}
+            
+            Contact Information:
+            Contact Name: ${ticketDraft.contact?.name || "N/A"}
+            Contact Email: ${ticketDraft.contact?.email || "N/A"}
+            Contact Phone: ${ticketDraft.contact?.phone || "N/A"}
+            
+            Issue Details:
+            Error Condition: ${ticketDraft.error_condition || "N/A"}
+            Error Description: ${ticketDraft.error_description || "N/A"}
+            
+            Metadata:
+            Affected System: ${ticketDraft.metadata?.affected_system || "N/A"}
+            Environment: ${ticketDraft.metadata?.environment || "N/A"}
+            Timestamp: ${ticketDraft.metadata?.timestamp || "N/A"}
+            After Hours: ${ticketDraft.metadata?.after_hours ?? "N/A"}
+            
+            Attachments:
+            Screenshot Attached: ${ticketDraft.screenshot_attachment?.attached ? "Yes" : "No"}
+            Screenshot File: ${ticketDraft.screenshot_attachment?.file_name || "N/A"}`,
                   },
                 ],
               },
@@ -341,7 +473,9 @@ async function createJiraTicket(ticketDraft: any) {
           issuetype: {
             id: process.env.JIRA_ISSUE_TYPE_ID || "10298",
           },
-          labels: Array.isArray(ticketDraft.labels) ? ticketDraft.labels : [],
+          labels: Array.from(
+            new Set(Array.isArray(ticketDraft.labels) ? ticketDraft.labels : []),
+          ),
         },
       }),
     });
@@ -445,6 +579,10 @@ Please let me know whether the reset/login steps worked.`,
           priority: "Medium",
           issue_type: "Support",
           labels: ["after-hours", "support-agent", "access"],
+          assignment_group: "IAM Team",
+          assignment_reason: "Detected password/login issue.",
+          category: "access",
+          subcategory: "login",
           contact: {
             name: "",
             email: "",
@@ -692,6 +830,10 @@ If the issue cannot be resolved through guided troubleshooting, I can move towar
         priority: "Medium",
         issue_type: "Support",
         labels: ["after-hours", "support-agent"],
+        assignment_group: "General Support",
+        assignment_reason: "",
+        category: "general",
+        subcategory: "general",
         contact: {
           name: "",
           email: "",
@@ -918,6 +1060,19 @@ Knowledge usage rules:
 - When knowledge base support is weak or missing, you may still give safe, generic Tier 1 troubleshooting guidance for low-risk issues such as password/login/access troubleshooting.
 - If something requires organization-specific steps that are not in the knowledge base, say so clearly and move toward follow-up questions or ticket creation.
 
+Routing rules:
+- Route login, password, MFA, account lockout, and access issues to IAM Team
+- Route infrastructure, deployment, AWS, cloud, DNS, network, and outage issues to CloudOps Team
+- Route phishing, suspicious activity, unauthorized access, malware, breach, and compliance issues to Security Team
+- Route reporting, dashboard, ETL, pipeline, warehouse, and data issues to Data Team
+- If the issue is unclear, use General Support
+
+When populating ticket_draft, always include:
+- assignment_group
+- assignment_reason
+- category
+- subcategory
+
 Knowledge Base:
 ${isRagWorking ? retrievedContext : "No information available."}
 
@@ -959,6 +1114,10 @@ You must ALWAYS return valid JSON in exactly this shape:
       "priority": "Low|Medium|High|Critical",
       "issue_type": "Support",
       "labels": ["after-hours", "support-agent"],
+      "assignment_group": "IAM Team|CloudOps Team|Security Team|Data Team|General Support",
+      "assignment_reason": "short explanation of why the issue was routed there",
+      "category": "access|infrastructure|security|data|general",
+      "subcategory": "login|cloudops|incident|pipeline|general",
       "contact": {
         "name": "caller name if known",
         "email": "caller email if known",
@@ -1044,6 +1203,40 @@ Response style rules:
     }
     
     const validatedResponse = responseSchema.parse(parsedResponse);
+    const fallbackRouting = determineAssignmentGroup(
+      validatedResponse.support_workflow.ticket_draft,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.assignment_group =
+      validatedResponse.support_workflow.ticket_draft.assignment_group ||
+      fallbackRouting.assignment_group;
+
+    validatedResponse.support_workflow.ticket_draft.assignment_reason =
+      validatedResponse.support_workflow.ticket_draft.assignment_reason ||
+      fallbackRouting.assignment_reason;
+
+    validatedResponse.support_workflow.ticket_draft.category =
+      validatedResponse.support_workflow.ticket_draft.category ||
+      fallbackRouting.category;
+
+    validatedResponse.support_workflow.ticket_draft.subcategory =
+      validatedResponse.support_workflow.ticket_draft.subcategory ||
+      fallbackRouting.subcategory;
+
+    validatedResponse.support_workflow.ticket_draft.labels = Array.from(
+      new Set([
+        ...(validatedResponse.support_workflow.ticket_draft.labels || []),
+        validatedResponse.support_workflow.ticket_draft.assignment_group
+          .toLowerCase()
+          .replace(/\s+/g, "-"),
+        validatedResponse.support_workflow.ticket_draft.category
+          .toLowerCase()
+          .replace(/\s+/g, "-"),
+        validatedResponse.support_workflow.ticket_draft.subcategory
+          .toLowerCase()
+          .replace(/\s+/g, "-"),
+      ]),
+    );
 
     console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
     let jiraTicket = {
