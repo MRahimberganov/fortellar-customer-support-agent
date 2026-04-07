@@ -1,22 +1,69 @@
-# Fortellar Customer Support AI Agent
+# 🚀 Fortellar AI Support Orchestration Platform
 
 An AI-powered customer support assistant designed for Fortellar services, solutions, and offerings.
 
 This application uses **Azure OpenAI (GPT-4o-mini)** to provide intelligent, context-aware responses based on Fortellar-specific knowledge such as CloudOps, Security & Compliance, HIPAA, and Disaster Recovery.
 
+This system acts as an intelligent orchestration layer between users and enterprise support systems, not just a chatbot.
+
 ---
 
-## 🚀 Features
+## 🏗️ High-Level Architecture
 
-- 💬 Chat-based AI assistant (Azure OpenAI powered)
-- 📚 Custom knowledge base using markdown files (RAG-style retrieval)
-- 🧠 Context-aware responses based on Fortellar services
-- 🕒 After-hours support logic (5 PM – 9 AM EST)
-- 🎫 Automated ticket intake workflow
-- 🧾 Structured ticket data (contact info, error details, metadata)
-- 🖼️ Screenshot attachment support (metadata-based)
-- ⚡ Suggested questions for quick interaction
-- 🧪 Mock support mode (no API required for testing)
+User → UI (Web / Chat)
+↓
+AI Orchestrator (Azure OpenAI)
+↓
+Decision Engine (routing + priority)
+↓
+Knowledge Base (RAG)
+↓
+Provider Layer
+↓
+Jira / ServiceNow / Zendesk (future)
+
+# 🚀 Features
+
+💬 AI-powered conversational support (Azure OpenAI / GPT-4o-mini)
+
+🧠 Intelligent decision engine
+- Determines whether to troubleshoot or escalate
+- Assigns priority dynamically
+- Detects urgency and user intent
+
+🔍 Guided troubleshooting workflow
+- Prevents unnecessary ticket creation
+- Asks contextual follow-up questions
+
+🎫 Automated ticket creation (Jira-ready)
+- Structured ticket generation
+- Priority + routing logic
+- Returns ticket confirmation UI
+
+🧾 Structured AI response contract
+- JSON-based responses for deterministic UI rendering
+- Enables advanced workflows (routing, escalation, UI cards)
+
+🖥️ Smart Ticket Confirmation UI
+- Displays ticket ID, routing, and priority
+- Styled “Open Jira Ticket” button
+- Clean, structured output (not raw AI text)
+
+🧭 Intelligent routing
+- IAM / CloudOps / Network-based routing logic
+- Easily extendable to ServiceNow, Zendesk, etc.
+
+🧑‍💻 Human escalation trigger
+- “Talk to a human” button
+- Emits event for live support / Teams / PagerDuty
+
+🖼️ Screenshot attachment support
+- Base64 upload handling
+- Included in ticket metadata
+
+⚡ Suggested questions for faster interaction
+
+🧪 Mock support mode (full workflow simulation without API)
 
 ---
 
@@ -40,6 +87,7 @@ You can easily extend it by adding more `.md` files.
 ## 🛠️ Getting Started
 
 ### 1. Clone the repository
+```md
 ```bash
 git clone https://github.com/MRahimberganov/fortellar-customer-support-agent.git
 cd fortellar-customer-support-agent
@@ -117,9 +165,20 @@ Error condition and description
 Affected system and environment
 Validates required fields
 Generates a structured ticket draft
-(Currently) simulates Jira ticket creation
+Creates structured ticket payloads compatible with Jira API
 
-Future enhancement: real Jira integration
+Includes:
+- Summary
+- Description (ADF-ready)
+- Priority mapping
+- Routing (assignment group)
+- Metadata (user, environment, attachments)
+
+Returns:
+- Ticket ID
+- Ticket link
+- Routing information
+- Priority (highlighted in UI)
 
 🖼️ Screenshot Support
 
@@ -157,20 +216,55 @@ escalation
 ticket creation
 ⚠️ Demo Status
 
-This is currently a demo / prototype version.
+This is an actively evolving prototype with production-oriented architecture.
+
+Current limitations:
+- Jira integration is partially mocked
+- Screenshot uploads are metadata-only
+
+The system is designed to be extended into a full production support platform.
 
 Jira integration is mocked
 Screenshot uploads are metadata-only
 Designed for internal testing and iteration
+
 📈 Future Enhancements
-🎫 Real Jira integration
-🖼️ File upload storage (S3 or similar)
-📊 Analytics (track user questions)
-👨‍💻 Escalation to human support
-📚 Multi-knowledge-base support
-🧠 Smarter intent classification
-🔐 Role-based access / authentication
-🎨 UI polish (animations, mobile optimization)
+
+🔌 Multi-provider support (Jira, ServiceNow, Zendesk)
+📡 Microsoft Teams / Slack integration (alerts, escalation)
+📊 Analytics (ticket trends, deflection rate, resolution time)
+🧠 Advanced intent classification & routing
+🖼️ File storage (S3 or blob storage for attachments)
+👨‍💻 Live agent handoff integration
+🏢 Multi-tenant / multi-client configuration
+🔐 Authentication & role-based access
+🎯 SLA-based prioritization & incident workflows
+
+🧠 AI Response Architecture (Important)
+
+The system uses a structured JSON response format instead of plain text.
+
+Example:
+
+{
+  "response": "...",
+  "thinking": "...",
+  "user_mood": "...",
+  "suggested_questions": [],
+  "redirect_to_agent": {
+    "should_redirect": false,
+    "reason": ""
+  },
+  "debug": {
+    "context_used": true
+  }
+}
+
+Why this matters:
+- Enables dynamic UI rendering (ticket cards, buttons)
+- Prevents frontend parsing errors
+- Allows workflow automation (routing, escalation)
+- Makes AI behavior predictable in production systems
 
 👤 Author
 
