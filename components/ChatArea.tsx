@@ -305,6 +305,21 @@ const ConversationHeader: React.FC<ConversationHeaderProps> = ({
   </div>
 );
 
+async function fileToBase64(file: File): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const base64 = result.split(",")[1] || "";
+      resolve(base64);
+    };
+
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function ChatArea() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -455,6 +470,16 @@ function ChatArea() {
       }),
     };
 
+    let screenshotPayload = null;
+
+    if (selectedScreenshot) {
+      screenshotPayload = {
+        file_name: selectedScreenshot.name,
+        file_type: selectedScreenshot.type,
+        content_base64: await fileToBase64(selectedScreenshot),
+      };
+    }
+    
     setMessages((prevMessages) => [
       ...prevMessages,
       userMessage,
@@ -469,6 +494,12 @@ function ChatArea() {
     try {
       console.log("➡️ Sending message to API:", userMessage.content);
       const startTime = performance.now();
+      console.log("FRONTEND SCREENSHOT PAYLOAD:", {
+        hasScreenshot: !!screenshotPayload,
+        fileName: screenshotPayload?.file_name || "",
+        fileType: screenshotPayload?.file_type || "",
+        hasBase64: !!screenshotPayload?.content_base64,
+      });
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -476,10 +507,10 @@ function ChatArea() {
           messages: [...messages, userMessage],
           model: selectedModel,
           knowledgeBaseId: selectedKnowledgeBase,
-          screenshot: selectedScreenshot
+          screenshot: screenshotPayload
             ? {
-                file_name: selectedScreenshot.name,
-                file_type: selectedScreenshot.type,
+                file_name: screenshotPayload.file_name,
+                file_type: screenshotPayload.file_type,
                 attached: true,
               }
             : {
@@ -487,6 +518,7 @@ function ChatArea() {
                 file_type: "",
                 attached: false,
               },
+          screenshot_file: screenshotPayload,
         }),
       });
 

@@ -4,6 +4,7 @@ import crypto from "crypto";
 import customerSupportCategories from "@/app/lib/customer_support_categories.json";
 import { createExternalTicket } from "@/app/lib/ticketing/createExternalTicket";
 import { determineAssignmentGroup } from "@/app/lib/ticketing/routing";
+import { sendTeamsAlert } from "@/app/lib/ticketing/teams";
 
 const responseSchema = z.object({
   response: z.string(),
@@ -1008,6 +1009,38 @@ Response style rules:
       );
     
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
+    }
+    const shouldSendTeamsAlert =
+      externalTicket.created &&
+      (
+        validatedResponse.support_workflow.ticket_draft.priority === "Critical" ||
+        validatedResponse.support_workflow.ticket_draft.labels?.includes("urgent")
+      );
+    
+    console.log("SHOULD SEND TEAMS ALERT:", shouldSendTeamsAlert);
+    
+    if (shouldSendTeamsAlert) {
+      console.log("SENDING TEAMS ALERT...");
+    
+      const teamsResult = await sendTeamsAlert({
+        title: "🚨 Urgent Support Ticket Created",
+        summary: validatedResponse.support_workflow.ticket_draft.summary,
+        priority: validatedResponse.support_workflow.ticket_draft.priority,
+        assignmentGroup:
+          validatedResponse.support_workflow.ticket_draft.assignment_group || "General Support",
+        jiraKey: externalTicket.key,
+        jiraUrl: externalTicket.url,
+        reporterName:
+          validatedResponse.support_workflow.ticket_draft.contact?.name || "",
+        reporterEmail:
+          validatedResponse.support_workflow.ticket_draft.contact?.email || "",
+        reporterPhone:
+          validatedResponse.support_workflow.ticket_draft.contact?.phone || "",
+        screenshotAttached:
+          validatedResponse.support_workflow.ticket_draft.screenshot_attachment?.attached || false,
+      });
+    
+      console.log("TEAMS ALERT RESULT:", teamsResult);
     }
     
     const responseWithId = {
