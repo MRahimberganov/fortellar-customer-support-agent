@@ -928,6 +928,7 @@ Important operating rules:
 - If required ticket fields are missing, ask follow-up questions before moving to escalation.
 - If should_create_ticket is true and any contact information is missing (name, email, or phone), you must ask for it in follow_up_questions.
 - Do not proceed as if the ticket is complete until contact information is collected.
+- Production outages, deployment failures, ALB 502/503/504 errors, and customer-facing service downtime should be treated as Critical infrastructure incidents unless the user clearly indicates otherwise.
 - Be practical, concise, and support-oriented.
 
 Knowledge usage rules:
@@ -1111,6 +1112,24 @@ Response style rules:
       latestMessageLower.includes("asap") ||
       latestMessageLower.includes("production is down") ||
       latestMessageLower.includes("critical");
+
+    const looksLikeProductionOutage =
+      latestMessageLower.includes("production is down") ||
+      latestMessageLower.includes("prod is down") ||
+      latestMessageLower.includes("service is down") ||
+      latestMessageLower.includes("portal is down") ||
+      latestMessageLower.includes("outage") ||
+      latestMessageLower.includes("ecs") ||
+      latestMessageLower.includes("eks") ||
+      latestMessageLower.includes("aws") ||
+      latestMessageLower.includes("502") ||
+      latestMessageLower.includes("503") ||
+      latestMessageLower.includes("504") ||
+      latestMessageLower.includes("bad gateway");
+    
+    if (looksLikeProductionOutage) {
+      validatedResponse.support_workflow.ticket_draft.priority = "Critical";
+    }
     
     if (isUrgent) {
       const currentSummary =
@@ -1148,6 +1167,7 @@ Response style rules:
 
     validatedResponse.support_workflow.ticket_draft.metadata = {
       ...(validatedResponse.support_workflow.ticket_draft.metadata || {}),
+      timestamp: new Date().toISOString(),
       cloud_provider:
         validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider ||
         determineCloudProvider(validatedResponse.support_workflow.ticket_draft),
@@ -1180,6 +1200,18 @@ Response style rules:
       !contact.name?.trim() ||
       !contact.email?.trim() ||
       !contact.phone?.trim();
+
+    if (
+      validatedResponse.support_workflow.should_create_ticket &&
+      missingContactInfo
+    ) {
+      validatedResponse.support_workflow.needs_follow_up = true;
+      validatedResponse.support_workflow.follow_up_questions = [
+        "What is your name?",
+        "What is your email address?",
+        "What is your phone number?",
+      ];
+    }
     let externalTicket = {
       attempted: false,
       created: false,
@@ -1213,6 +1245,18 @@ Response style rules:
         validatedResponse.support_workflow.ticket_draft,
         screenshot_file,
       );
+
+    if (externalTicket.created) {
+      validatedResponse.response = `Your support ticket has been created successfully.
+    
+    Ticket: ${externalTicket.key}
+    Link: ${externalTicket.url}
+    
+    It has been routed to ${validatedResponse.support_workflow.ticket_draft.assignment_group} with ${validatedResponse.support_workflow.ticket_draft.priority} priority.`;
+    
+      validatedResponse.support_workflow.needs_follow_up = false;
+      validatedResponse.support_workflow.follow_up_questions = [];
+    }
     
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
