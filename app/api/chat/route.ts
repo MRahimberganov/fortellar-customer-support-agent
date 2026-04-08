@@ -1161,19 +1161,43 @@ Response style rules:
     const fallbackRouting = determineAssignmentGroup(
       validatedResponse.support_workflow.ticket_draft,
     );
-
-    validatedResponse.support_workflow.ticket_draft.assignment_group =
-      validatedResponse.support_workflow.ticket_draft.assignment_group ||
-      fallbackRouting.assignment_group;
-
-    validatedResponse.support_workflow.ticket_draft.assignment_reason =
-      validatedResponse.support_workflow.ticket_draft.assignment_reason ||
-      fallbackRouting.assignment_reason;
-
-    validatedResponse.support_workflow.ticket_draft.category =
-      validatedResponse.support_workflow.ticket_draft.category ||
-      fallbackRouting.category;
-
+    
+    const looksLikeIAMIssue =
+      latestMessageLower.includes("azure ad") ||
+      latestMessageLower.includes("entra") ||
+      latestMessageLower.includes("mfa") ||
+      latestMessageLower.includes("login") ||
+      latestMessageLower.includes("log in") ||
+      latestMessageLower.includes("sign in") ||
+      latestMessageLower.includes("employee") ||
+      latestMessageLower.includes("laptop") ||
+      latestMessageLower.includes("password") ||
+      latestMessageLower.includes("account locked");
+    
+    if (looksLikeIAMIssue) {
+      validatedResponse.support_workflow.ticket_draft.assignment_group = "IAM Team";
+      validatedResponse.support_workflow.ticket_draft.assignment_reason =
+        "Detected Azure AD, Entra, MFA, employee login, or identity-related issue.";
+      validatedResponse.support_workflow.ticket_draft.category = "access";
+      validatedResponse.support_workflow.ticket_draft.subcategory = "login";
+    } else {
+      validatedResponse.support_workflow.ticket_draft.assignment_group =
+        validatedResponse.support_workflow.ticket_draft.assignment_group ||
+        fallbackRouting.assignment_group;
+    
+      validatedResponse.support_workflow.ticket_draft.assignment_reason =
+        validatedResponse.support_workflow.ticket_draft.assignment_reason ||
+        fallbackRouting.assignment_reason;
+    
+      validatedResponse.support_workflow.ticket_draft.category =
+        validatedResponse.support_workflow.ticket_draft.category ||
+        fallbackRouting.category;
+    
+      validatedResponse.support_workflow.ticket_draft.subcategory =
+        validatedResponse.support_workflow.ticket_draft.subcategory ||
+        fallbackRouting.subcategory;
+    }
+    
     validatedResponse.support_workflow.ticket_draft.metadata = {
       ...(validatedResponse.support_workflow.ticket_draft.metadata || {}),
       timestamp: new Date().toISOString(),

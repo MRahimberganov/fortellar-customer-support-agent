@@ -5,26 +5,36 @@ export function determineAssignmentGroup(ticketDraft: TicketDraft) {
   const description = String(ticketDraft?.description || "").toLowerCase();
   const errorCondition = String(ticketDraft?.error_condition || "").toLowerCase();
   const errorDescription = String(ticketDraft?.error_description || "").toLowerCase();
+  const affectedSystem = String(
+    ticketDraft?.metadata?.affected_system || "",
+  ).toLowerCase();
 
   const combinedText = [
     summary,
     description,
     errorCondition,
     errorDescription,
+    affectedSystem,
   ].join(" ");
 
   if (
+    combinedText.includes("azure ad") ||
+    combinedText.includes("entra") ||
     combinedText.includes("log in") ||
     combinedText.includes("login") ||
     combinedText.includes("sign in") ||
     combinedText.includes("password") ||
     combinedText.includes("access denied") ||
     combinedText.includes("account locked") ||
-    combinedText.includes("mfa")
+    combinedText.includes("mfa") ||
+    combinedText.includes("employee") ||
+    combinedText.includes("laptop") ||
+    combinedText.includes("authentication")
   ) {
     return {
       assignment_group: "IAM Team",
-      assignment_reason: "Detected login, password, MFA, or access-related issue.",
+      assignment_reason:
+        "Detected Azure AD, Entra, MFA, employee login, or access-related identity issue.",
       category: "access",
       subcategory: "login",
     };
@@ -42,11 +52,20 @@ export function determineAssignmentGroup(ticketDraft: TicketDraft) {
     combinedText.includes("network") ||
     combinedText.includes("container") ||
     combinedText.includes("kubernetes") ||
-    combinedText.includes("service down")
+    combinedText.includes("service down") ||
+    combinedText.includes("ecs") ||
+    combinedText.includes("eks") ||
+    combinedText.includes("alb") ||
+    combinedText.includes("cloudfront") ||
+    combinedText.includes("502") ||
+    combinedText.includes("503") ||
+    combinedText.includes("504") ||
+    combinedText.includes("bad gateway")
   ) {
     return {
       assignment_group: "CloudOps Team",
-      assignment_reason: "Detected infrastructure, cloud platform, deployment, or outage issue.",
+      assignment_reason:
+        "Detected infrastructure, cloud platform, deployment, or outage issue.",
       category: "infrastructure",
       subcategory: "cloudops",
     };
@@ -64,7 +83,8 @@ export function determineAssignmentGroup(ticketDraft: TicketDraft) {
   ) {
     return {
       assignment_group: "Security Team",
-      assignment_reason: "Detected security, suspicious activity, or compliance-related issue.",
+      assignment_reason:
+        "Detected security, suspicious activity, or compliance-related issue.",
       category: "security",
       subcategory: "incident",
     };
@@ -78,11 +98,13 @@ export function determineAssignmentGroup(ticketDraft: TicketDraft) {
     combinedText.includes("report") ||
     combinedText.includes("warehouse") ||
     combinedText.includes("job failed") ||
-    combinedText.includes("report failed")
+    combinedText.includes("report failed") ||
+    combinedText.includes("bigquery")
   ) {
     return {
       assignment_group: "Data Team",
-      assignment_reason: "Detected data, reporting, ETL, or pipeline issue.",
+      assignment_reason:
+        "Detected data, reporting, ETL, or pipeline issue.",
       category: "data",
       subcategory: "pipeline",
     };
