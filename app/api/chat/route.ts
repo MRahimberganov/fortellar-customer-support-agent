@@ -231,12 +231,19 @@ function determineTicketingSystem(ticketDraft: any) {
   if (
     assignmentGroup.includes("cloudops") ||
     assignmentGroup.includes("security") ||
-    assignmentGroup.includes("data")
+    assignmentGroup.includes("data") ||
+    category.includes("infrastructure") ||
+    subcategory.includes("cloudops") ||
+    subcategory.includes("incident")
   ) {
     return "jira";
   }
 
-  if (assignmentGroup.includes("iam")) {
+  if (
+    assignmentGroup.includes("iam") ||
+    category.includes("access") ||
+    subcategory.includes("login")
+  ) {
     return "servicenow";
   }
 
@@ -246,7 +253,8 @@ function determineTicketingSystem(ticketDraft: any) {
     combinedText.includes("refund") ||
     combinedText.includes("invoice") ||
     combinedText.includes("product support") ||
-    combinedText.includes("external user")
+    combinedText.includes("external user") ||
+    combinedText.includes("customer support")
   ) {
     return "zendesk";
   }
@@ -1024,9 +1032,10 @@ You must ALWAYS return valid JSON in exactly this shape:
 }
 
 Choose a ticketing_system for the issue:
-- use "jira" for engineering, cloud, infrastructure, DevOps, security engineering, and data engineering issues
-- use "servicenow" for internal ITSM, employee access, onboarding, MFA, laptop, and internal service desk workflows
-- use "zendesk" for customer support, external user issues, billing questions, and product support cases
+- Use "jira" for engineering, cloud, infrastructure, security engineering, and data incidents.
+- Use "servicenow" for internal ITSM, login, MFA, onboarding, employee access, and laptop issues.
+- Use "zendesk" for customer support, billing, external user issues, and product support.
+- If the issue mentions AWS, Azure, GCP, ECS, EKS, Azure AD, Entra, GKE, Cloud Run, BigQuery, or similar, populate ticket_draft.metadata.cloud_provider accordingly.
 
 Always include support_workflow.ticketing_system.
 If the issue mentions AWS, Azure, GCP, EC2, EKS, Azure AD, Entra, GKE, Cloud Run, S3, BigQuery, or similar cloud services, populate ticket_draft.metadata.cloud_provider accordingly.
@@ -1247,12 +1256,21 @@ Response style rules:
       );
     
       if (externalTicket.created) {
+        const ticketSystemLabel =
+          validatedResponse.support_workflow.ticketing_system === "servicenow"
+            ? "Open ServiceNow Ticket"
+            : validatedResponse.support_workflow.ticketing_system === "zendesk"
+            ? "Open Zendesk Ticket"
+            : "Open Jira Ticket";
+      
         validatedResponse.response = [
           `**Ticket ID:** ${externalTicket.key}`,
-          `**Link:** [Open Jira Ticket](${externalTicket.url})`,
+          `**Link:** [${ticketSystemLabel}](${externalTicket.url})`,
           ``,
           `**Routed to:** ${validatedResponse.support_workflow.ticket_draft.assignment_group}`,
           `**Priority:** ${validatedResponse.support_workflow.ticket_draft.priority}`,
+          `**Ticketing System:** ${validatedResponse.support_workflow.ticketing_system}`,
+          `**Cloud Provider:** ${validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider || "unknown"}`,
           ``,
           `Our team has been notified and is investigating.`,
         ].join("\n");

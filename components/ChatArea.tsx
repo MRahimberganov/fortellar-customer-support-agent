@@ -205,35 +205,37 @@ const MessageContent = ({
   const isTicketConfirmation =
     (parsed.response || "").includes("**Ticket ID:**") &&
     (parsed.response || "").includes("**Routed to:**");
-
+  
   if (isTicketConfirmation) {
     const responseText = parsed.response || content;
-
+  
     const ticketIdMatch = responseText.match(/\*\*Ticket ID:\*\*\s*(.+)/);
-    const linkMatch = responseText.match(
-      /\*\*Link:\*\*\s*\[([^\]]+)\]\(([^)]+)\)/
-    );
+    const linkMatch = responseText.match(/\*\*Link:\*\*\s*\[([^\]]+)\]\(([^)]+)\)/);
     const routedToMatch = responseText.match(/\*\*Routed to:\*\*\s*(.+)/);
     const priorityMatch = responseText.match(/\*\*Priority:\*\*\s*(.+)/);
-
+    const ticketingSystemMatch = responseText.match(/\*\*Ticketing System:\*\*\s*(.+)/);
+    const cloudProviderMatch = responseText.match(/\*\*Cloud Provider:\*\*\s*(.+)/);
+  
     const ticketId = ticketIdMatch?.[1] || "";
-    const linkLabel = linkMatch?.[1] || "Open Jira Ticket";
+    const linkLabel = linkMatch?.[1] || "Open Ticket";
     const linkUrl = linkMatch?.[2] || "";
     const routedTo = routedToMatch?.[1] || "";
     const priority = priorityMatch?.[1] || "";
-
+    const ticketingSystem = ticketingSystemMatch?.[1] || "";
+    const cloudProvider = cloudProviderMatch?.[1] || "";
+  
     return (
       <>
         <div className="rounded-lg border bg-white p-4 shadow-sm space-y-3">
           <div className="font-semibold text-green-700">
             ✅ Ticket Created Successfully
           </div>
-
+  
           <div className="space-y-2 text-sm text-black">
             <div>
               <span className="font-semibold">Ticket ID:</span> {ticketId}
             </div>
-
+  
             <div>
               <span className="font-semibold">Link:</span>{" "}
               {linkUrl ? (
@@ -241,28 +243,36 @@ const MessageContent = ({
                   href={linkUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-block px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+                  className="inline-block px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition w-fit"
                 >
-                  Open Jira Ticket
+                  {linkLabel}
                 </a>
               ) : (
                 linkLabel
               )}
             </div>
-
+  
             <div>
               <span className="font-semibold">Routed to:</span> {routedTo}
             </div>
-
+  
             <div>
               <span className="font-semibold">Priority:</span>{" "}
               <span className="text-red-600 font-medium">{priority}</span>
             </div>
-
+  
+            <div>
+              <span className="font-semibold">Ticketing System:</span> {ticketingSystem}
+            </div>
+  
+            <div>
+              <span className="font-semibold">Cloud Provider:</span> {cloudProvider}
+            </div>
+  
             <div>Our team has been notified and is investigating.</div>
           </div>
         </div>
-
+  
         {parsed.redirect_to_agent && (
           <UISelector redirectToAgent={parsed.redirect_to_agent} />
         )}

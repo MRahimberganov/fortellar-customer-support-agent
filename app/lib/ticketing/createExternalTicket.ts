@@ -1,8 +1,8 @@
 import { ticketProviderRegistry } from "./providerRegistry";
 import type {
+  ScreenshotPayload,
   TicketDraft,
   TicketResult,
-  ScreenshotPayload,
   TicketingSystem,
 } from "./types";
 
@@ -11,10 +11,19 @@ export async function createExternalTicket(
   ticketDraft: TicketDraft,
   screenshotFile?: ScreenshotPayload | null,
 ): Promise<TicketResult> {
-  const normalizedSystem = ((system || "jira").toLowerCase() as TicketingSystem);
+  const normalizedSystem = (system || "jira").toLowerCase() as TicketingSystem;
 
-  const provider =
-    ticketProviderRegistry[normalizedSystem] || ticketProviderRegistry.jira;
+  const provider = ticketProviderRegistry[normalizedSystem];
+
+  if (!provider) {
+    return {
+      attempted: false,
+      created: false,
+      key: "",
+      url: "",
+      error: `No ticket provider is configured for system: ${system}`,
+    };
+  }
 
   return provider(ticketDraft, screenshotFile);
 }
