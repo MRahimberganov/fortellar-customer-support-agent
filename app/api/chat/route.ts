@@ -43,7 +43,7 @@ const responseSchema = z.object({
     ]),
     issue_type: z.string().default("general"),
     ticketing_system: z.string().optional(),
-    cloud_provider: z.enum(["aws", "azure", "gcp", "none"]).default("none"),
+    cloud_provider: z.enum(["aws", "azure", "gcp", "unknown"]).default("unknown"),
     target_system: z.enum(["jira", "servicenow", "zendesk", "none"]).default("none"),
     action_type: z.enum([
       "troubleshoot",
