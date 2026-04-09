@@ -10,10 +10,11 @@ import { determineSeverity } from "@/app/lib/ticketing/severity";
 import { determineEnvironment } from "@/app/lib/ticketing/environmentDetection";
 import { determineComponentType } from "@/app/lib/ticketing/componentDetection";
 import { determineResolutionSuggestion } from "@/app/lib/ticketing/resolutionEngine";
+import { buildConversationMemory } from "@/app/lib/ticketing/conversationMemory";
+import { mergeTicketDraft } from "@/app/lib/ticketing/mergeTicketDraft";
 import {
   getRoutingConfidence,
   getCloudConfidence,
-  getTicketingSystemConfidence,
   getSeverityConfidence,
 } from "@/app/lib/ticketing/confidence";
 import { addDecisionLog } from "@/app/lib/ticketing/decisionLog";
@@ -312,7 +313,10 @@ function determineTicketingSystem(ticketDraft: any) {
   if (
     assignmentGroup.includes("iam") ||
     category.includes("access") ||
-    subcategory.includes("login")
+    subcategory.includes("login") ||
+    subcategory.includes("vpn") ||
+    combinedText.includes("vpn") ||
+    combinedText.includes("remote access")
   ) {
     return "servicenow";
   }
@@ -825,6 +829,8 @@ export async function POST(req: Request) {
     screenshot_file,
   } = await req.json();
   const latestMessage = messages?.[messages.length - 1]?.content || "";
+  const conversationMemory = buildConversationMemory(messages);
+  console.log("CONVERSATION MEMORY:", conversationMemory);
 
   console.log("LATEST MESSAGE RECEIVED:", latestMessage);
 
@@ -1228,6 +1234,102 @@ Response style rules:
         ]),
       );
     }
+
+    const mergedTicketDraft: typeof validatedResponse.support_workflow.ticket_draft = {
+      ...mergeTicketDraft(
+        validatedResponse.support_workflow.ticket_draft,
+        {
+          contact: {
+            email:
+              validatedResponse.support_workflow.ticket_draft.contact?.email ||
+              conversationMemory.collected_contact.email ||
+              "",
+            phone:
+              validatedResponse.support_workflow.ticket_draft.contact?.phone ||
+              conversationMemory.collected_contact.phone ||
+              "",
+            name:
+              validatedResponse.support_workflow.ticket_draft.contact?.name || "",
+          },
+          metadata: {
+            ...(validatedResponse.support_workflow.ticket_draft.metadata || {}),
+            ...(conversationMemory.inferred_ticket_updates.metadata || {}),
+          },
+        },
+      ),
+    
+      assignment_group:
+        validatedResponse.support_workflow.ticket_draft.assignment_group ||
+        "General Support",
+    
+      assignment_reason:
+        validatedResponse.support_workflow.ticket_draft.assignment_reason || "",
+    
+      category:
+        validatedResponse.support_workflow.ticket_draft.category || "general",
+    
+      subcategory:
+        validatedResponse.support_workflow.ticket_draft.subcategory || "general",
+    
+      summary:
+        validatedResponse.support_workflow.ticket_draft.summary || "",
+    
+      description:
+        validatedResponse.support_workflow.ticket_draft.description || "",
+    
+      priority:
+        validatedResponse.support_workflow.ticket_draft.priority || "Medium",
+    
+      issue_type:
+        validatedResponse.support_workflow.ticket_draft.issue_type || "Support",
+    
+      labels:
+        validatedResponse.support_workflow.ticket_draft.labels || [],
+    
+      error_condition:
+        validatedResponse.support_workflow.ticket_draft.error_condition || "",
+    
+      error_description:
+        validatedResponse.support_workflow.ticket_draft.error_description || "",
+    
+      contact: {
+        name:
+          validatedResponse.support_workflow.ticket_draft.contact?.name || "",
+        email:
+          validatedResponse.support_workflow.ticket_draft.contact?.email ||
+          conversationMemory.collected_contact.email ||
+          "",
+        phone:
+          validatedResponse.support_workflow.ticket_draft.contact?.phone ||
+          conversationMemory.collected_contact.phone ||
+          "",
+      },
+    
+      metadata: {
+        affected_system:
+          validatedResponse.support_workflow.ticket_draft.metadata?.affected_system || "",
+        environment:
+          validatedResponse.support_workflow.ticket_draft.metadata?.environment || "unknown",
+        timestamp:
+          validatedResponse.support_workflow.ticket_draft.metadata?.timestamp || "",
+        after_hours:
+          validatedResponse.support_workflow.ticket_draft.metadata?.after_hours ?? false,
+        cloud_provider:
+          validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider || "unknown",
+      },
+    
+      screenshot_attachment: {
+        file_name:
+          validatedResponse.support_workflow.ticket_draft.screenshot_attachment?.file_name || "",
+        file_type:
+          validatedResponse.support_workflow.ticket_draft.screenshot_attachment?.file_type || "",
+        attached:
+          validatedResponse.support_workflow.ticket_draft.screenshot_attachment?.attached ?? false,
+      },
+    };
+    
+    validatedResponse.support_workflow.ticket_draft = mergedTicketDraft;
+
     const fallbackRouting = determineAssignmentGroup(
       validatedResponse.support_workflow.ticket_draft,
     );
@@ -1243,8 +1345,20 @@ Response style rules:
       latestMessageLower.includes("laptop") ||
       latestMessageLower.includes("password") ||
       latestMessageLower.includes("account locked");
+
+    const looksLikeVPNIssue =
+      latestMessageLower.includes("vpn") ||
+      latestMessageLower.includes("remote access") ||
+      latestMessageLower.includes("connection failed") ||
+      latestMessageLower.includes("cannot connect remotely");
     
-    if (looksLikeIAMIssue) {
+    if (looksLikeVPNIssue) {
+      validatedResponse.support_workflow.ticket_draft.assignment_group = "IAM Team";
+      validatedResponse.support_workflow.ticket_draft.assignment_reason =
+        "Detected VPN or remote access issue.";
+      validatedResponse.support_workflow.ticket_draft.category = "access";
+      validatedResponse.support_workflow.ticket_draft.subcategory = "vpn";
+    } else if (looksLikeIAMIssue) {
       validatedResponse.support_workflow.ticket_draft.assignment_group = "IAM Team";
       validatedResponse.support_workflow.ticket_draft.assignment_reason =
         "Detected Azure AD, Entra, MFA, employee login, or identity-related issue.";
@@ -1368,13 +1482,22 @@ Response style rules:
       ]),
     );
 
-    console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
+    const latestUserMessage =
+      messages[messages.length - 1]?.content || "";
+    
     const resolutionSuggestion = determineResolutionSuggestion(
       validatedResponse.support_workflow.ticket_draft,
+      latestMessage,
     );
+    console.log("RESOLUTION SUGGESTION RESULT:", resolutionSuggestion);
     
     validatedResponse.support_workflow.resolution_type =
       resolutionSuggestion.resolution_type;
+    
+    console.log(
+      "RESOLUTION TYPE AFTER ASSIGNMENT:",
+      validatedResponse.support_workflow.resolution_type,
+    );
     
     if (
       resolutionSuggestion.should_attempt_resolution &&
@@ -1392,7 +1515,17 @@ Response style rules:
         validatedResponse.support_workflow.should_create_ticket = false;
       }
     }
-    
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "conversation_memory",
+      "Enriched ticket draft using prior conversation context",
+      conversationMemory.user_said_still_not_working
+        ? "still_not_working"
+        : "context_merged",
+      0.9,
+    );
+        
     validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
       validatedResponse.support_workflow.ticket_draft.decision_log,
       "resolution_engine",
@@ -1421,6 +1554,22 @@ Response style rules:
           'If this does not resolve the issue, reply with "still not working" and I will move toward ticket creation.',
         ].join("\n");
     }
+
+    console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
+
+    if (conversationMemory.user_said_still_not_working) {
+      validatedResponse.support_workflow.attempted_resolution = true;
+    
+      if (
+        validatedResponse.support_workflow.resolution_status !== "resolved"
+      ) {
+        validatedResponse.support_workflow.resolution_status = "unresolved";
+        validatedResponse.support_workflow.should_create_ticket = true;
+        validatedResponse.support_workflow.escalation_reason =
+          validatedResponse.support_workflow.escalation_reason ||
+          'User reported that guided troubleshooting "still not working".';
+      }
+    }
     
     const contact = validatedResponse.support_workflow.ticket_draft.contact || {};
     
@@ -1430,9 +1579,9 @@ Response style rules:
       !contact.phone?.trim();
     
     // Determine ticketing system
-    const ticketingSystem =
-      validatedResponse.support_workflow.ticketing_system ||
-      determineTicketingSystem(validatedResponse.support_workflow.ticket_draft);
+    const ticketingSystem = determineTicketingSystem(
+      validatedResponse.support_workflow.ticket_draft,
+    );
     
     validatedResponse.support_workflow.ticketing_system = ticketingSystem;
     
@@ -1447,9 +1596,18 @@ Response style rules:
     validatedResponse.support_workflow.needs_follow_up =
       workflowDecision.should_ask_follow_up;
     
+    const severity =
+      validatedResponse.support_workflow.ticket_draft.severity;
+    
+    const isSev1 = severity === "sev1";
+    
     if (
       workflowDecision.should_ask_follow_up ||
-      (validatedResponse.support_workflow.should_create_ticket && missingContactInfo)
+      (
+        validatedResponse.support_workflow.should_create_ticket &&
+        missingContactInfo &&
+        !isSev1
+      )
     ) {
       validatedResponse.support_workflow.needs_follow_up = true;
       validatedResponse.support_workflow.follow_up_questions = [
@@ -1457,7 +1615,10 @@ Response style rules:
         "What is your email address?",
         "What is your phone number?",
       ];
-      validatedResponse.support_workflow.should_create_ticket = false;
+    
+      if (!isSev1) {
+        validatedResponse.support_workflow.should_create_ticket = false;
+      }
     }
     
     let externalTicket = {

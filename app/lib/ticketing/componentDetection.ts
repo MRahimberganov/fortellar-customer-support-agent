@@ -76,6 +76,8 @@ export function determineComponentType(ticketDraft: TicketDraft): ComponentType 
     text.includes("dns") ||
     text.includes("network") ||
     text.includes("vpn") ||
+    text.includes("remote access") ||
+    text.includes("connection failed") ||
     text.includes("timeout") ||
     text.includes("connection refused")
   ) {
