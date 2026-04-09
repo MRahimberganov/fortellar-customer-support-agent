@@ -1309,7 +1309,9 @@ Response style rules:
         affected_system:
           validatedResponse.support_workflow.ticket_draft.metadata?.affected_system || "",
         environment:
-          validatedResponse.support_workflow.ticket_draft.metadata?.environment || "unknown",
+          conversationMemory.inferred_ticket_updates.metadata?.environment ||
+          validatedResponse.support_workflow.ticket_draft.metadata?.environment ||
+          "unknown",
         timestamp:
           validatedResponse.support_workflow.ticket_draft.metadata?.timestamp || "",
         after_hours:
@@ -1330,6 +1332,21 @@ Response style rules:
     
     validatedResponse.support_workflow.ticket_draft = mergedTicketDraft;
 
+    // ✅ Preserve classification from prior conversation (NEW BLOCK)
+    if (conversationMemory.user_said_still_not_working) {
+      const priorText = conversationMemory.prior_user_messages.join(" ").toLowerCase();
+    
+      if (priorText.includes("vpn")) {
+        validatedResponse.support_workflow.ticket_draft.category = "access";
+        validatedResponse.support_workflow.ticket_draft.subcategory = "vpn";
+        validatedResponse.support_workflow.ticket_draft.component_type = "network";
+        validatedResponse.support_workflow.ticket_draft.assignment_group = "IAM Team";
+        validatedResponse.support_workflow.ticket_draft.assignment_reason =
+          "Preserved VPN classification from prior conversation context.";
+      }
+    }
+    
+    // 👇 existing code (DO NOT MOVE THIS)
     const fallbackRouting = determineAssignmentGroup(
       validatedResponse.support_workflow.ticket_draft,
     );
