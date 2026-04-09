@@ -12,7 +12,8 @@ export function evaluateWorkflow(ticketDraft: TicketDraft): WorkflowDecision {
   const should_send_alert = severity === "sev1";
   const should_attempt_auto_resolution =
     severity === "sev4" || ticketDraft.category === "access";
-  const should_ask_follow_up = missingContactInfo || routingConfidence < 0.65;
+  const should_ask_follow_up =
+    severity !== "sev1" && (missingContactInfo || routingConfidence < 0.65);
 
   return {
     should_create_ticket: !should_ask_follow_up,

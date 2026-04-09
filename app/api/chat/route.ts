@@ -7,6 +7,9 @@ import { determineAssignmentGroup } from "@/app/lib/ticketing/routing";
 import { sendTeamsAlert } from "@/app/lib/ticketing/teams";
 import { determineCloudProvider } from "@/app/lib/ticketing/cloudRouting";
 import { determineSeverity } from "@/app/lib/ticketing/severity";
+import { determineEnvironment } from "@/app/lib/ticketing/environmentDetection";
+import { determineComponentType } from "@/app/lib/ticketing/componentDetection";
+import { determineResolutionSuggestion } from "@/app/lib/ticketing/resolutionEngine";
 import {
   getRoutingConfidence,
   getCloudConfidence,
@@ -67,6 +70,9 @@ const responseSchema = z.object({
     follow_up_questions: z.array(z.string()).default([]),
     troubleshooting_steps: z.array(z.string()).default([]),
     attempted_resolution: z.boolean(),
+    resolution_type: z
+      .enum(["password_reset", "mfa", "vpn", "browser", "onboarding", "unknown"])
+      .default("unknown"),
     resolution_status: z.enum([
       "resolved",
       "unresolved",
@@ -106,6 +112,7 @@ const responseSchema = z.object({
           "auth",
           "network",
           "infra",
+          "data",
           "unknown",
         ])
         .optional(),
@@ -128,7 +135,9 @@ const responseSchema = z.object({
       metadata: z
         .object({
           affected_system: z.string().default(""),
-          environment: z.string().default(""),
+          environment: z
+            .enum(["prod", "stage", "uat", "dev", "unknown"])
+            .default("unknown"),
           timestamp: z.string().default(""),
           after_hours: z.boolean().default(false),
           cloud_provider: z
@@ -137,7 +146,7 @@ const responseSchema = z.object({
         })
         .default({
           affected_system: "",
-          environment: "",
+          environment: "unknown",
           timestamp: "",
           after_hours: false,
           cloud_provider: "unknown",
@@ -178,7 +187,7 @@ const responseSchema = z.object({
         .optional(),
     }),  // closes ticket_draft
     
-    }),  // closes support_workflow
+  }),  // closes support_workflow
     
     jira_ticket: z
       .object({
@@ -1265,8 +1274,23 @@ Response style rules:
       cloud_provider:
         validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider ||
         determineCloudProvider(validatedResponse.support_workflow.ticket_draft),
+      environment:
+        validatedResponse.support_workflow.ticket_draft.metadata?.environment ||
+        determineEnvironment(validatedResponse.support_workflow.ticket_draft),
     };
-
+    
+    validatedResponse.support_workflow.ticket_draft.component_type =
+      validatedResponse.support_workflow.ticket_draft.component_type ||
+      determineComponentType(validatedResponse.support_workflow.ticket_draft);
+    
+    validatedResponse.support_workflow.ticket_draft.labels = Array.from(
+      new Set([
+        ...(validatedResponse.support_workflow.ticket_draft.labels || []),
+        `env-${validatedResponse.support_workflow.ticket_draft.metadata?.environment || "unknown"}`,
+        `component-${validatedResponse.support_workflow.ticket_draft.component_type || "unknown"}`,
+      ]),
+    );
+    
     const severityInfo = determineSeverity(
       validatedResponse.support_workflow.ticket_draft,
     );
@@ -1283,6 +1307,46 @@ Response style rules:
       ),
       severity: getSeverityConfidence(severityInfo.severity),
     };
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "routing",
+      validatedResponse.support_workflow.ticket_draft.assignment_reason || "Fallback routing applied",
+      validatedResponse.support_workflow.ticket_draft.assignment_group,
+      validatedResponse.support_workflow.ticket_draft.confidence?.routing,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "cloud_detection",
+      "Detected cloud provider from issue text and metadata",
+      validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider,
+      validatedResponse.support_workflow.ticket_draft.confidence?.cloud_provider,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "environment_detection",
+      "Detected environment from issue text and metadata",
+      validatedResponse.support_workflow.ticket_draft.metadata?.environment,
+      0.85,
+    );
+    
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "component_detection",
+      "Detected affected component from issue text and category context",
+      validatedResponse.support_workflow.ticket_draft.component_type,
+      0.85,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "severity",
+      "Calculated business severity and urgency from issue language",
+      validatedResponse.support_workflow.ticket_draft.severity,
+      validatedResponse.support_workflow.ticket_draft.confidence?.severity,
+    );
     
     const detectedCloudProvider =
       validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider ||
@@ -1305,8 +1369,61 @@ Response style rules:
     );
 
     console.log("SUPPORT WORKFLOW DEBUG:", validatedResponse.support_workflow);
+    const resolutionSuggestion = determineResolutionSuggestion(
+      validatedResponse.support_workflow.ticket_draft,
+    );
+    
+    validatedResponse.support_workflow.resolution_type =
+      resolutionSuggestion.resolution_type;
+    
+    if (
+      resolutionSuggestion.should_attempt_resolution &&
+      !validatedResponse.support_workflow.attempted_resolution &&
+      validatedResponse.support_workflow.resolution_status !== "resolved"
+    ) {
+      validatedResponse.support_workflow.troubleshooting_steps =
+        resolutionSuggestion.suggested_steps;
+    
+      if (
+        validatedResponse.support_workflow.intent === "troubleshooting" ||
+        validatedResponse.support_workflow.intent === "issue"
+      ) {
+        validatedResponse.support_workflow.needs_follow_up = true;
+        validatedResponse.support_workflow.should_create_ticket = false;
+      }
+    }
+    
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "resolution_engine",
+      resolutionSuggestion.should_attempt_resolution
+        ? "Suggested a guided self-service resolution path"
+        : "Skipped self-service resolution due to risk, severity, or issue type",
+      resolutionSuggestion.resolution_type,
+      resolutionSuggestion.confidence,
+    );
+    
+    if (
+      resolutionSuggestion.should_attempt_resolution &&
+      validatedResponse.support_workflow.resolution_status !== "resolved" &&
+      validatedResponse.support_workflow.troubleshooting_steps.length > 0
+    ) {
+      validatedResponse.response =
+        (validatedResponse.response || "") +
+        "\n\n" +
+        [
+          "Here are some steps you can try:",
+          "",
+          ...validatedResponse.support_workflow.troubleshooting_steps.map(
+            (step, index) => `${index + 1}. ${step}`,
+          ),
+          "",
+          'If this does not resolve the issue, reply with "still not working" and I will move toward ticket creation.',
+        ].join("\n");
+    }
+    
     const contact = validatedResponse.support_workflow.ticket_draft.contact || {};
-
+    
     const missingContactInfo =
       !contact.name?.trim() ||
       !contact.email?.trim() ||
@@ -1351,55 +1468,6 @@ Response style rules:
       error: "",
     };
     
-    if (validatedResponse.support_workflow.should_create_ticket) {
-      externalTicket = await createExternalTicket(
-        validatedResponse.support_workflow.ticketing_system,
-        validatedResponse.support_workflow.ticket_draft,
-        screenshot_file,
-      );
-    }
-    
-    validatedResponse.support_workflow.ticketing_system = ticketingSystem;
-
-    validatedResponse.support_workflow.ticket_draft.confidence = {
-      ...(validatedResponse.support_workflow.ticket_draft.confidence || {}),
-      ticketing_system: getTicketingSystemConfidence(
-        validatedResponse.support_workflow.ticketing_system as any,
-      ),
-    };
-
-    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
-      validatedResponse.support_workflow.ticket_draft.decision_log,
-      "routing",
-      validatedResponse.support_workflow.ticket_draft.assignment_reason || "Fallback routing applied",
-      validatedResponse.support_workflow.ticket_draft.assignment_group,
-      validatedResponse.support_workflow.ticket_draft.confidence?.routing,
-    );
-
-    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
-      validatedResponse.support_workflow.ticket_draft.decision_log,
-      "cloud_detection",
-      "Detected cloud provider from issue text and metadata",
-      validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider,
-      validatedResponse.support_workflow.ticket_draft.confidence?.cloud_provider,
-    );
-
-    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
-      validatedResponse.support_workflow.ticket_draft.decision_log,
-      "ticketing_system",
-      "Selected external system based on routing, category, and support context",
-      validatedResponse.support_workflow.ticketing_system,
-      validatedResponse.support_workflow.ticket_draft.confidence?.ticketing_system,
-    );
-
-    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
-      validatedResponse.support_workflow.ticket_draft.decision_log,
-      "severity",
-      "Calculated business severity and urgency from issue language",
-      validatedResponse.support_workflow.ticket_draft.severity,
-      validatedResponse.support_workflow.ticket_draft.confidence?.severity,
-    );
-        
     console.log(
       "SELECTED TICKETING SYSTEM:",
       validatedResponse.support_workflow.ticketing_system,
@@ -1407,8 +1475,7 @@ Response style rules:
     
     if (
       validatedResponse.support_workflow.should_create_ticket &&
-      validatedResponse.support_workflow.resolution_status !== "resolved" &&
-      !missingContactInfo
+      validatedResponse.support_workflow.resolution_status !== "resolved"
     ) {
       console.log("ABOUT TO CREATE EXTERNAL TICKET");
       console.log("SCREENSHOT FILE RECEIVED:", {
@@ -1430,7 +1497,7 @@ Response style rules:
             : validatedResponse.support_workflow.ticketing_system === "zendesk"
             ? "Open Zendesk Ticket"
             : "Open Jira Ticket";
-      
+    
         validatedResponse.response = [
           `**Ticket ID:** ${externalTicket.key}`,
           `**Link:** [${ticketSystemLabel}](${externalTicket.url})`,
@@ -1438,11 +1505,13 @@ Response style rules:
           `**Routed to:** ${validatedResponse.support_workflow.ticket_draft.assignment_group}`,
           `**Priority:** ${validatedResponse.support_workflow.ticket_draft.priority}`,
           `**Ticketing System:** ${validatedResponse.support_workflow.ticketing_system}`,
-          `**Cloud Provider:** ${validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider || "unknown"}`,
+          `**Cloud Provider:** ${
+            validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider || "unknown"
+          }`,
           ``,
           `Our team has been notified and is investigating.`,
         ].join("\n");
-      
+    
         validatedResponse.support_workflow.needs_follow_up = false;
         validatedResponse.support_workflow.follow_up_questions = [];
       }
@@ -1450,22 +1519,7 @@ Response style rules:
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
     
-    validatedResponse.support_workflow.should_create_ticket =
-      workflowDecision.should_create_ticket;
-    
-    validatedResponse.support_workflow.needs_follow_up =
-      workflowDecision.should_ask_follow_up;
-    
-    if (workflowDecision.should_ask_follow_up) {
-      validatedResponse.support_workflow.follow_up_questions = [
-        "What is your name?",
-        "What is your email address?",
-        "What is your phone number?",
-      ];
-    }
-    
-    const priority =
-      validatedResponse.support_workflow.ticket_draft.priority;
+    const priority = validatedResponse.support_workflow.ticket_draft.priority;
     
     const shouldSendTeamsAlert =
       externalTicket.created &&
@@ -1474,22 +1528,8 @@ Response style rules:
     console.log("SHOULD SEND TEAMS ALERT:", shouldSendTeamsAlert);
     
     if (shouldSendTeamsAlert) {
-      console.log("SENDING TEAMS ALERT...");
-      
-      validatedResponse.support_workflow.should_create_ticket =
-        workflowDecision.should_create_ticket;
-      
-      validatedResponse.support_workflow.needs_follow_up =
-        workflowDecision.should_ask_follow_up;
-      
-      if (workflowDecision.should_ask_follow_up) {
-        validatedResponse.support_workflow.follow_up_questions = [
-          "What is your name?",
-          "What is your email address?",
-          "What is your phone number?",
-        ];
-      }
-      
+      console.log("SENDING TEAMS ALERT.");
+    
       const teamsResult = await sendTeamsAlert({
         title: "🚨 Urgent Support Ticket Created",
         summary: validatedResponse.support_workflow.ticket_draft.summary,

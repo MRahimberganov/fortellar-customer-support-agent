@@ -46,7 +46,7 @@ export type TicketDraft = {
   impact?: "single_user" | "team" | "department" | "customer_facing" | "production";
   urgency?: "low" | "medium" | "high" | "critical";
   affected_service?: string;
-  component_type?: "api" | "frontend" | "database" | "auth" | "network" | "infra" | "unknown";
+  component_type?: "api" | "frontend" | "database" | "auth" | "network" | "infra" | "data" | "unknown";
 
   contact?: {
     name?: string;
@@ -59,7 +59,7 @@ export type TicketDraft = {
 
   metadata?: {
     affected_system?: string;
-    environment?: string;
+    environment?: "prod" | "stage" | "uat" | "dev" | "unknown";
     timestamp?: string;
     after_hours?: boolean;
     cloud_provider?: CloudProvider;
@@ -87,3 +87,18 @@ export type TicketProviderHandler = (
   ticketDraft: TicketDraft,
   screenshotFile?: ScreenshotPayload | null,
 ) => Promise<TicketResult>;
+
+export type ResolutionType =
+  | "password_reset"
+  | "mfa"
+  | "vpn"
+  | "browser"
+  | "onboarding"
+  | "unknown";
+
+export type ResolutionSuggestion = {
+  should_attempt_resolution: boolean;
+  resolution_type: ResolutionType;
+  suggested_steps: string[];
+  confidence: number;
+};

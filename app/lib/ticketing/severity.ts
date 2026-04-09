@@ -15,7 +15,9 @@ export function determineSeverity(ticketDraft: TicketDraft): {
     .join(" ")
     .toLowerCase();
 
-  if (
+  const environment = ticketDraft.metadata?.environment || "unknown";
+
+  const isOutage =
     text.includes("production is down") ||
     text.includes("prod is down") ||
     text.includes("outage") ||
@@ -23,12 +25,24 @@ export function determineSeverity(ticketDraft: TicketDraft): {
     text.includes("portal is down") ||
     text.includes("service down") ||
     text.includes("503") ||
-    text.includes("504")
-  ) {
+    text.includes("504");
+
+  if (isOutage && environment === "prod") {
     return {
       severity: "sev1",
       impact: "production",
       urgency: "critical",
+    };
+  }
+
+  if (
+    isOutage &&
+    (environment === "stage" || environment === "uat")
+  ) {
+    return {
+      severity: "sev2",
+      impact: "department",
+      urgency: "high",
     };
   }
 
