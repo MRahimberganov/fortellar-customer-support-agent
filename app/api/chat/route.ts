@@ -6,6 +6,15 @@ import { createExternalTicket } from "@/app/lib/ticketing/createExternalTicket";
 import { determineAssignmentGroup } from "@/app/lib/ticketing/routing";
 import { sendTeamsAlert } from "@/app/lib/ticketing/teams";
 import { determineCloudProvider } from "@/app/lib/ticketing/cloudRouting";
+import { determineSeverity } from "@/app/lib/ticketing/severity";
+import {
+  getRoutingConfidence,
+  getCloudConfidence,
+  getTicketingSystemConfidence,
+  getSeverityConfidence,
+} from "@/app/lib/ticketing/confidence";
+import { addDecisionLog } from "@/app/lib/ticketing/decisionLog";
+import { evaluateWorkflow } from "@/app/lib/ticketing/workflowEngine";
 
 const responseSchema = z.object({
   response: z.string(),
@@ -76,6 +85,31 @@ const responseSchema = z.object({
       assignment_reason: z.string().default(""),
       category: z.string().default("general"),
       subcategory: z.string().default("general"),
+    
+      severity: z.enum(["sev1", "sev2", "sev3", "sev4"]).optional(),
+      impact: z
+        .enum([
+          "single_user",
+          "team",
+          "department",
+          "customer_facing",
+          "production",
+        ])
+        .optional(),
+      urgency: z.enum(["low", "medium", "high", "critical"]).optional(),
+      affected_service: z.string().optional(),
+      component_type: z
+        .enum([
+          "api",
+          "frontend",
+          "database",
+          "auth",
+          "network",
+          "infra",
+          "unknown",
+        ])
+        .optional(),
+    
       contact: z
         .object({
           name: z.string().default(""),
@@ -87,25 +121,28 @@ const responseSchema = z.object({
           email: "",
           phone: "",
         }),
+    
       error_condition: z.string().default(""),
       error_description: z.string().default(""),
+    
       metadata: z
-      .object({
-        affected_system: z.string().default(""),
-        environment: z.string().default(""),
-        timestamp: z.string().default(""),
-        after_hours: z.boolean().default(false),
-        cloud_provider: z
-          .enum(["aws", "azure", "gcp", "unknown"])
-          .default("unknown"),
-      })
-      .default({
-        affected_system: "",
-        environment: "",
-        timestamp: "",
-        after_hours: false,
-        cloud_provider: "unknown",
-      }),
+        .object({
+          affected_system: z.string().default(""),
+          environment: z.string().default(""),
+          timestamp: z.string().default(""),
+          after_hours: z.boolean().default(false),
+          cloud_provider: z
+            .enum(["aws", "azure", "gcp", "unknown"])
+            .default("unknown"),
+        })
+        .default({
+          affected_system: "",
+          environment: "",
+          timestamp: "",
+          after_hours: false,
+          cloud_provider: "unknown",
+        }),
+    
       screenshot_attachment: z
         .object({
           file_name: z.string().default(""),
@@ -117,18 +154,42 @@ const responseSchema = z.object({
           file_type: "",
           attached: false,
         }),
-      }),
-    }),
-  jira_ticket: z
-    .object({
-      attempted: z.boolean(),
-      created: z.boolean(),
-      key: z.string().optional().default(""),
-      url: z.string().optional().default(""),
-      error: z.string().optional().default(""),
-    })
-    .optional(),
-});
+    
+      confidence: z
+        .object({
+          routing: z.number().optional(),
+          ticketing_system: z.number().optional(),
+          cloud_provider: z.number().optional(),
+          severity: z.number().optional(),
+          resolution: z.number().optional(),
+        })
+        .optional(),
+    
+      decision_log: z
+        .array(
+          z.object({
+            step: z.string(),
+            reason: z.string(),
+            value: z.string().optional(),
+            confidence: z.number().optional(),
+            timestamp: z.string().optional(),
+          }),
+        )
+        .optional(),
+    }),  // closes ticket_draft
+    
+    }),  // closes support_workflow
+    
+    jira_ticket: z
+      .object({
+        attempted: z.boolean(),
+        created: z.boolean(),
+        key: z.string().optional().default(""),
+        url: z.string().optional().default(""),
+        error: z.string().optional().default(""),
+      })
+      .optional(),
+    });
 
 function sanitizeHeaderValue(value: string): string {
   return value.replace(/[^\x00-\x7F]/g, "");
@@ -1206,6 +1267,23 @@ Response style rules:
         determineCloudProvider(validatedResponse.support_workflow.ticket_draft),
     };
 
+    const severityInfo = determineSeverity(
+      validatedResponse.support_workflow.ticket_draft,
+    );
+    
+    validatedResponse.support_workflow.ticket_draft.severity = severityInfo.severity;
+    validatedResponse.support_workflow.ticket_draft.impact = severityInfo.impact;
+    validatedResponse.support_workflow.ticket_draft.urgency = severityInfo.urgency;
+    
+    validatedResponse.support_workflow.ticket_draft.confidence = {
+      ...(validatedResponse.support_workflow.ticket_draft.confidence || {}),
+      routing: getRoutingConfidence(validatedResponse.support_workflow.ticket_draft),
+      cloud_provider: getCloudConfidence(
+        validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider || "unknown",
+      ),
+      severity: getSeverityConfidence(severityInfo.severity),
+    };
+    
     const detectedCloudProvider =
       validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider ||
       "unknown";
@@ -1233,10 +1311,28 @@ Response style rules:
       !contact.name?.trim() ||
       !contact.email?.trim() ||
       !contact.phone?.trim();
-
+    
+    // Determine ticketing system
+    const ticketingSystem =
+      validatedResponse.support_workflow.ticketing_system ||
+      determineTicketingSystem(validatedResponse.support_workflow.ticket_draft);
+    
+    validatedResponse.support_workflow.ticketing_system = ticketingSystem;
+    
+    // Evaluate workflow decisions
+    const workflowDecision = evaluateWorkflow(
+      validatedResponse.support_workflow.ticket_draft,
+    );
+    
+    validatedResponse.support_workflow.should_create_ticket =
+      workflowDecision.should_create_ticket;
+    
+    validatedResponse.support_workflow.needs_follow_up =
+      workflowDecision.should_ask_follow_up;
+    
     if (
-      validatedResponse.support_workflow.should_create_ticket &&
-      missingContactInfo
+      workflowDecision.should_ask_follow_up ||
+      (validatedResponse.support_workflow.should_create_ticket && missingContactInfo)
     ) {
       validatedResponse.support_workflow.needs_follow_up = true;
       validatedResponse.support_workflow.follow_up_questions = [
@@ -1244,7 +1340,9 @@ Response style rules:
         "What is your email address?",
         "What is your phone number?",
       ];
+      validatedResponse.support_workflow.should_create_ticket = false;
     }
+    
     let externalTicket = {
       attempted: false,
       created: false,
@@ -1253,9 +1351,55 @@ Response style rules:
       error: "",
     };
     
-    validatedResponse.support_workflow.ticketing_system =
-      determineTicketingSystem(validatedResponse.support_workflow.ticket_draft);
+    if (validatedResponse.support_workflow.should_create_ticket) {
+      externalTicket = await createExternalTicket(
+        validatedResponse.support_workflow.ticketing_system,
+        validatedResponse.support_workflow.ticket_draft,
+        screenshot_file,
+      );
+    }
     
+    validatedResponse.support_workflow.ticketing_system = ticketingSystem;
+
+    validatedResponse.support_workflow.ticket_draft.confidence = {
+      ...(validatedResponse.support_workflow.ticket_draft.confidence || {}),
+      ticketing_system: getTicketingSystemConfidence(
+        validatedResponse.support_workflow.ticketing_system as any,
+      ),
+    };
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "routing",
+      validatedResponse.support_workflow.ticket_draft.assignment_reason || "Fallback routing applied",
+      validatedResponse.support_workflow.ticket_draft.assignment_group,
+      validatedResponse.support_workflow.ticket_draft.confidence?.routing,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "cloud_detection",
+      "Detected cloud provider from issue text and metadata",
+      validatedResponse.support_workflow.ticket_draft.metadata?.cloud_provider,
+      validatedResponse.support_workflow.ticket_draft.confidence?.cloud_provider,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "ticketing_system",
+      "Selected external system based on routing, category, and support context",
+      validatedResponse.support_workflow.ticketing_system,
+      validatedResponse.support_workflow.ticket_draft.confidence?.ticketing_system,
+    );
+
+    validatedResponse.support_workflow.ticket_draft.decision_log = addDecisionLog(
+      validatedResponse.support_workflow.ticket_draft.decision_log,
+      "severity",
+      "Calculated business severity and urgency from issue language",
+      validatedResponse.support_workflow.ticket_draft.severity,
+      validatedResponse.support_workflow.ticket_draft.confidence?.severity,
+    );
+        
     console.log(
       "SELECTED TICKETING SYSTEM:",
       validatedResponse.support_workflow.ticketing_system,
@@ -1306,17 +1450,46 @@ Response style rules:
       console.log("EXTERNAL TICKET RESULT:", externalTicket);
     }
     
+    validatedResponse.support_workflow.should_create_ticket =
+      workflowDecision.should_create_ticket;
+    
+    validatedResponse.support_workflow.needs_follow_up =
+      workflowDecision.should_ask_follow_up;
+    
+    if (workflowDecision.should_ask_follow_up) {
+      validatedResponse.support_workflow.follow_up_questions = [
+        "What is your name?",
+        "What is your email address?",
+        "What is your phone number?",
+      ];
+    }
+    
     const priority =
       validatedResponse.support_workflow.ticket_draft.priority;
     
     const shouldSendTeamsAlert =
-      externalTicket.created && priority === "Critical";
+      externalTicket.created &&
+      (workflowDecision.should_send_alert || priority === "Critical");
     
     console.log("SHOULD SEND TEAMS ALERT:", shouldSendTeamsAlert);
     
     if (shouldSendTeamsAlert) {
       console.log("SENDING TEAMS ALERT...");
-    
+      
+      validatedResponse.support_workflow.should_create_ticket =
+        workflowDecision.should_create_ticket;
+      
+      validatedResponse.support_workflow.needs_follow_up =
+        workflowDecision.should_ask_follow_up;
+      
+      if (workflowDecision.should_ask_follow_up) {
+        validatedResponse.support_workflow.follow_up_questions = [
+          "What is your name?",
+          "What is your email address?",
+          "What is your phone number?",
+        ];
+      }
+      
       const teamsResult = await sendTeamsAlert({
         title: "🚨 Urgent Support Ticket Created",
         summary: validatedResponse.support_workflow.ticket_draft.summary,
